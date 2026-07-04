@@ -1,0 +1,5 @@
+﻿nuclei.exe
+nuclei_targets_*.txt
+temp_scan_*.xml
+venv/
+__pycache__/
