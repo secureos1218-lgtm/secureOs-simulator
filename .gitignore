@@ -1,5 +1,6 @@
-﻿nuclei.exe
-nuclei_targets_*.txt
-temp_scan_*.xml
-venv/
+﻿venv/
+firebase_key.json
+*.json
+!package.json
 __pycache__/
+*.py[cod]

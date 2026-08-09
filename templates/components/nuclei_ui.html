@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% set active_page = "nuclei" %}
+
+{% block title %}Vulnerability Scanner - SecurOS{% endblock %}
+
+{% block extra_head %}
+<style>
+  .controls { margin-bottom: 18px; padding: 22px; }
+  .control-grid { display: grid; grid-template-columns: 2fr 1fr auto; gap: 22px; align-items: end; }
+  label { display: block; margin-bottom: 9px; font-weight: 650; }
+  input, select { width: 100%; height: 46px; padding: 0 13px; border: 1px solid #3b526d; border-radius: 6px; outline: none; color: var(--text); background: #0a1727; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 14px 18px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { background: #070f1a; color: #b9c9dd; }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <h1>Nuclei Vulnerability Scanner</h1>
+  <p>Template-driven CVE and security misconfiguration analysis engine</p>
+</header>
+
+<section class="panel controls">
+  <div class="control-grid">
+    <div>
+      <label for="target">Target Host / URL</label>
+      <input id="target" value="http://127.0.0.1:8000" placeholder="http://target.internal">
+    </div>
+    <div>
+      <label for="severity">Severity Filter</label>
+      <select id="severity">
+        <option value="">All Severities</option>
+        <option value="critical,high">Critical & High Only</option>
+        <option value="medium">Medium Only</option>
+        <option value="info">Info Only</option>
+      </select>
+    </div>
+    <button class="btn primary" id="startBtn">▶ Run Nuclei</button>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">Identified Vulnerabilities</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Template ID</th><th>Name</th><th>Severity</th><th>Matched At</th></tr></thead>
+      <tbody id="nucleiResults"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  "use strict";
+  const startBtn = document.getElementById("startBtn");
+  const targetInput = document.getElementById("target");
+  const severitySelect = document.getElementById("severity");
+  const nucleiResults = document.getElementById("nucleiResults");
+
+  const ws = new WebSocket(`ws://${window.location.host}/ws/nuclei`);
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "NUCLEI_FINDING") {
+      const d = msg.data;
+      const row = document.createElement("tr");
+      row.innerHTML = `<td><strong>${d.template_id}</strong></td><td>${d.name}</td><td><span class="badge">${d.severity}</span></td><td>${d.matched_at}</td>`;
+      nucleiResults.appendChild(row);
+    } else if (msg.type === "NUCLEI_COMPLETE") {
+      startBtn.disabled = false;
+    }
+  };
+
+  startBtn.onclick = () => {
+    const target = targetInput.value.trim();
+    if (!target) return;
+    nucleiResults.replaceChildren();
+    startBtn.disabled = true;
+    ws.send(JSON.stringify({ action: "RUN_NUCLEI", target: target, severity: severitySelect.value }));
+  };
+</script>
+{% endblock %}

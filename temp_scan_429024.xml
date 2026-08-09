@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///C:/Program Files (x86)/Nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.98 scan initiated Thu Jul  2 22:12:30 2026 as: nmap -&#45;stats-every 1s -F -sT -oX temp_scan_429024.xml 192.168.10.0/24 -->
+<nmaprun scanner="nmap" args="nmap -&#45;stats-every 1s -F -sT -oX temp_scan_429024.xml 192.168.10.0/24" start="1783010550" startstr="Thu Jul  2 22:12:30 2026" version="7.98" xmloutputversion="1.05">
+<scaninfo type="connect" protocol="tcp" numservices="100" services="7,9,13,21-23,25-26,37,53,79-81,88,106,110-111,113,119,135,139,143-144,179,199,389,427,443-445,465,513-515,543-544,548,554,587,631,646,873,990,993,995,1025-1029,1110,1433,1720,1723,1755,1900,2000-2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000-6001,6646,7070,8000,8008-8009,8080-8081,8443,8888,9100,9999-10000,32768,49152-49157"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.168.10.1" addrtype="ipv4"/>
+<address addr="B4:F9:49:B6:48:57" addrtype="mac" vendor="optilink networks pvt"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.168.10.5" addrtype="ipv4"/>
+<address addr="90:E4:68:EA:7C:44" addrtype="mac" vendor="Guangzhou Shiyuan Electronic Technology Company Limited"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<taskprogress task="ARP Ping Scan" time="1783010551" percent="50.39" remaining="1" etc="1783010552"/>
+<taskprogress task="ARP Ping Scan" time="1783010552" percent="72.16" remaining="1" etc="1783010553"/>
+<taskprogress task="ARP Ping Scan" time="1783010553" percent="90.59" remaining="1" etc="1783010553"/>
+<taskprogress task="Connect Scan" time="1783010554" percent="3.75" remaining="0" etc="1783010554"/>
+<taskprogress task="Connect Scan" time="1783010555" percent="54.00" remaining="1" etc="1783010556"/>
+<taskprogress task="Connect Scan" time="1783010556" percent="54.00" remaining="2" etc="1783010558"/>
+<taskprogress task="Connect Scan" time="1783010557" percent="55.33" remaining="3" etc="1783010559"/>
+<taskprogress task="Connect Scan" time="1783010558" percent="55.33" remaining="4" etc="1783010561"/>
+<taskprogress task="Connect Scan" time="1783010559" percent="56.33" remaining="4" etc="1783010563"/>
+<taskprogress task="Connect Scan" time="1783010560" percent="57.17" remaining="5" etc="1783010564"/>
+<taskprogress task="Connect Scan" time="1783010561" percent="58.17" remaining="6" etc="1783010566"/>
+<taskprogress task="Connect Scan" time="1783010562" percent="58.67" remaining="6" etc="1783010568"/>
+<taskprogress task="Connect Scan" time="1783010563" percent="59.00" remaining="7" etc="1783010569"/>
+<taskprogress task="Connect Scan" time="1783010564" percent="57.75" remaining="8" etc="1783010571"/>
+<taskprogress task="Connect Scan" time="1783010565" percent="58.00" remaining="8" etc="1783010573"/>
+<taskprogress task="Connect Scan" time="1783010566" percent="58.25" remaining="9" etc="1783010575"/>
+<taskprogress task="Connect Scan" time="1783010567" percent="58.50" remaining="10" etc="1783010576"/>
+<taskprogress task="Connect Scan" time="1783010568" percent="58.75" remaining="10" etc="1783010578"/>
+<taskprogress task="Connect Scan" time="1783010569" percent="58.88" remaining="11" etc="1783010579"/>
+<taskprogress task="Connect Scan" time="1783010571" percent="58.10" remaining="13" etc="1783010583"/>
+<taskprogress task="Connect Scan" time="1783010571" percent="60.75" remaining="11" etc="1783010582"/>
+<taskprogress task="Connect Scan" time="1783010572" percent="60.92" remaining="12" etc="1783010584"/>
+<taskprogress task="Connect Scan" time="1783010573" percent="60.92" remaining="13" etc="1783010585"/>
+<taskprogress task="Connect Scan" time="1783010574" percent="61.00" remaining="13" etc="1783010587"/>
+<taskprogress task="Connect Scan" time="1783010575" percent="61.08" remaining="14" etc="1783010588"/>
+<taskprogress task="Connect Scan" time="1783010576" percent="94.50" remaining="2" etc="1783010577"/>
+<taskprogress task="Connect Scan" time="1783010577" percent="98.25" remaining="1" etc="1783010577"/>
+<taskprogress task="Connect Scan" time="1783010578" percent="100.00" remaining="1" etc="1783010578"/>
+<host starttime="1783010554" endtime="1783010555"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.168.10.1" addrtype="ipv4"/>
+<address addr="B4:F9:49:B6:48:57" addrtype="mac" vendor="optilink networks pvt"/>
+<hostnames>
+</hostnames>
+<ports><extraports state="closed" count="94">
+<extrareasons reason="conn-refused" count="94" proto="tcp" ports="7,9,13,25-26,37,79,81,88,106,110-111,113,119,135,139,143-144,179,199,389,427,444-445,465,513-515,543-544,548,554,587,631,646,873,990,993,995,1025-1029,1110,1433,1720,1723,1755,1900,2000-2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000-6001,6646,7070,8000,8008-8009,8080-8081,8443,8888,9100,9999-10000,32768,49152-49157"/>
+</extraports>
+<port protocol="tcp" portid="21"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ftp" method="table" conf="3"/></port>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ssh" method="table" conf="3"/></port>
+<port protocol="tcp" portid="23"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="telnet" method="table" conf="3"/></port>
+<port protocol="tcp" portid="53"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="domain" method="table" conf="3"/></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" method="table" conf="3"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="https" method="table" conf="3"/></port>
+</ports>
+<times srtt="9088" rttvar="5339" to="100000"/>
+</host>
+<host starttime="1783010554" endtime="1783010578"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.168.10.5" addrtype="ipv4"/>
+<address addr="90:E4:68:EA:7C:44" addrtype="mac" vendor="Guangzhou Shiyuan Electronic Technology Company Limited"/>
+<hostnames>
+</hostnames>
+<ports><extraports state="closed" count="96">
+<extrareasons reason="conn-refused" count="96" proto="tcp" ports="7,9,13,21-23,25-26,37,53,79-81,88,106,111,113,119,135,139,143-144,179,199,389,427,443-445,465,513-515,543-544,548,554,587,631,646,873,990,993,995,1026-1029,1110,1433,1720,1723,1755,1900,2000-2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000-6001,6646,7070,8000,8080-8081,8443,8888,9100,9999-10000,32768,49152-49157"/>
+</extraports>
+<port protocol="tcp" portid="110"><state state="filtered" reason="no-response" reason_ttl="0"/><service name="pop3" method="table" conf="3"/></port>
+<port protocol="tcp" portid="1025"><state state="filtered" reason="no-response" reason_ttl="0"/><service name="NFS-or-IIS" method="table" conf="3"/></port>
+<port protocol="tcp" portid="8008"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="http" method="table" conf="3"/></port>
+<port protocol="tcp" portid="8009"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ajp13" method="table" conf="3"/></port>
+</ports>
+<times srtt="7625" rttvar="3939" to="100000"/>
+</host>
+<host starttime="1783010578" endtime="1783010578"><status state="up" reason="localhost-response" reason_ttl="0"/>
+<address addr="192.168.10.3" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<ports><extraports state="closed" count="97">
+<extrareasons reason="conn-refused" count="97" proto="tcp" ports="7,9,13,21-23,25-26,37,53,79-81,88,106,110-111,113,119,143-144,179,199,389,427,443-444,465,513-515,543-544,548,554,587,631,646,873,990,993,995,1025-1029,1110,1433,1720,1723,1755,1900,2000-2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000-6001,6646,7070,8000,8008-8009,8080-8081,8443,8888,9100,9999-10000,32768,49152-49157"/>
+</extraports>
+<port protocol="tcp" portid="135"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="msrpc" method="table" conf="3"/></port>
+<port protocol="tcp" portid="139"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="netbios-ssn" method="table" conf="3"/></port>
+<port protocol="tcp" portid="445"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="microsoft-ds" method="table" conf="3"/></port>
+</ports>
+<times srtt="551" rttvar="627" to="100000"/>
+</host>
+<runstats><finished time="1783010578" timestr="Thu Jul  2 22:12:58 2026" summary="Nmap done at Thu Jul  2 22:12:58 2026; 256 IP addresses (3 hosts up) scanned in 28.14 seconds" elapsed="28.14" exit="success"/><hosts up="3" down="253" total="256"/>
+</runstats>
+</nmaprun>

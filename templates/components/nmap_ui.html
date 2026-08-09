@@ -1,388 +1,229 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nmap Scanner - SecurOS</title>
-  <style>
-    :root {
-      --bg: #06111f;
-      --sidebar: #09172a;
-      --panel: #0b1a2c;
-      --panel-dark: #081523;
-      --border: #213650;
-      --text: #f3f7fc;
-      --muted: #9badc5;
-      --cyan: #08c9ec;
-      --cyan-dark: #087c99;
-      --green: #39dc72;
-      --danger: #ff6b7a;
-      --neon-purple: #a855f7;
-      --glass-panel: rgba(15, 23, 42, 0.65);
-    }
+{% extends "base.html" %}
+{% set active_page = "nmap" %}
 
-    * { box-sizing: border-box; }
+{% block title %}Nmap Scanner - SecurOS{% endblock %}
 
-    body {
-      min-height: 100vh;
-      margin: 0;
-      color: var(--text);
-      background: radial-gradient(circle at 88% 10%, rgba(8, 201, 236, 0.07), transparent 28%), var(--bg);
-      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-    }
+{% block extra_head %}
+<style>
+  .controls { margin-bottom: 18px; padding: 22px; }
+  .control-grid { display: grid; grid-template-columns: minmax(210px, 1.3fr) minmax(180px, 1fr) minmax(150px, 1fr) auto; gap: 22px; align-items: end; }
+  label { display: block; margin-bottom: 9px; font-weight: 650; }
 
-    button, input, select { font: inherit; }
-    .app { display: flex; min-height: 100vh; }
+  input, select {
+    width: 100%; height: 46px; padding: 0 13px; border: 1px solid #3b526d; border-radius: 6px;
+    outline: none; color: var(--text); background: #0a1727; transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  input:focus, select:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(8, 201, 236, 0.12); }
+  input:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }
+  select { cursor: pointer; }
+  select option { background: #0a1727; }
+  .hint { display: block; margin-top: 8px; font-size: 12px; }
 
-    /* Master Shared Sidebar Layout */
-    .sidebar {
-      position: fixed;
-      inset: 0 auto 0 0;
-      z-index: 10;
-      display: flex;
-      width: 250px;
-      flex-direction: column;
-      border-right: 1px solid var(--border);
-      background: rgba(8, 23, 42, 0.96);
-    }
+  .actions { display: flex; gap: 10px; padding-bottom: 20px; }
 
-    .brand {
-      display: flex;
-      height: 82px;
-      align-items: center;
-      gap: 12px;
-      padding: 0 26px;
-      border-bottom: 1px solid rgba(33, 54, 80, 0.55);
-      font-size: 18px;
-      font-weight: 750;
-    }
+  .progress-row { display: grid; grid-template-columns: auto 1fr 100px; gap: 20px; align-items: center; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--border); }
+  .progress-track { overflow: hidden; height: 18px; border: 1px solid #29415e; border-radius: 10px; background: #07121f; }
+  .progress-bar { width: 0%; height: 100%; border-radius: inherit; background: repeating-linear-gradient(135deg, #08c9ec 0 12px, #0bb9da 12px 24px); box-shadow: 0 0 18px rgba(8, 201, 236, 0.28); transition: width 0.2s ease; }
+  .progress-value { color: var(--cyan); font-weight: 750; text-align: right; }
 
-    .brand-mark {
-      display: grid;
-      width: 34px;
-      height: 34px;
-      place-items: center;
-      border: 2px solid var(--cyan);
-      border-radius: 50%;
-      color: var(--cyan);
-      box-shadow: 0 0 20px rgba(8, 201, 236, 0.2);
-    }
+  .results-layout { display: grid; grid-template-columns: 1.08fr 1fr; gap: 18px; }
+  .panel-heading { padding: 17px 20px; border-bottom: 1px solid var(--border); font-size: 17px; font-weight: 700; }
+  
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 14px 18px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+  th { color: #b9c9dd; font-weight: 550; }
+  td { color: #d2dceb; }
+  tbody tr:hover { background: rgba(8, 201, 236, 0.035); }
 
-    .nav { padding: 22px 0; }
+  .badge { display: inline-block; padding: 3px 10px; border: 1px solid rgba(57, 220, 114, 0.45); border-radius: 5px; color: var(--green); background: rgba(57, 220, 114, 0.1); }
+  .badge.closed { border-color: #354b67; color: #a8b7ca; background: #15243a; }
+  .table-footer { padding: 20px; font-size: 12px; color: var(--muted); }
 
-    .nav-item {
-      position: relative;
-      display: flex;
-      width: 100%;
-      min-height: 60px;
-      align-items: center;
-      gap: 14px;
-      padding: 0 24px;
-      color: #aebdd2;
-      text-decoration: none;
-      transition: color 0.2s, background 0.2s;
-    }
+  .terminal { height: 500px; overflow: auto; padding: 20px; color: #d9e2ee; background: #06101b; font: 12px/1.55 "Cascadia Code", monospace; white-space: pre-wrap; }
+</style>
+{% endblock %}
 
-    .nav-item:hover { color: #fff; background: rgba(255, 255, 255, 0.025); }
-    .nav-item.active {
-      color: var(--cyan);
-      background: linear-gradient(90deg, rgba(8, 201, 236, 0.12), rgba(8, 201, 236, 0.035));
-    }
-    .nav-item.active::before {
-      position: absolute;
-      left: 0;
-      width: 3px;
-      height: 100%;
-      background: var(--cyan);
-      content: "";
-    }
+{% block content %}
+<header class="page-header">
+  <h1>Nmap Scanner</h1>
+  <p>Network discovery and security auditing with Nmap</p>
+</header>
 
-    .nav-icon { width: 24px; font-size: 20px; text-align: center; }
-
-    .system-status {
-      margin: auto 16px 18px;
-      padding: 17px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.02);
-      font-size: 13px;
-    }
-
-    .status-title { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
-    .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
-    .system-status small { color: var(--green); }
-
-    main { width: calc(100% - 250px); margin-left: 250px; padding: 34px 36px 40px; }
-    .page-header { margin-bottom: 24px; }
-    .page-header h1 { margin: 0 0 6px; font-size: clamp(28px, 3vw, 36px); letter-spacing: -0.7px; }
-    .page-header p, .hint, .table-footer { color: var(--muted); }
-    .page-header p { margin: 0; }
-
-    .panel {
-      overflow: hidden;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: linear-gradient(145deg, rgba(12, 29, 49, 0.96), rgba(8, 21, 35, 0.98));
-      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.13);
-    }
-
-    .controls { margin-bottom: 18px; padding: 22px; }
-    .control-grid { display: grid; grid-template-columns: minmax(210px, 1.3fr) minmax(180px, 1fr) minmax(150px, 1fr) auto; gap: 22px; align-items: end; }
-    label { display: block; margin-bottom: 9px; font-weight: 650; }
-
-    input, select {
-      width: 100%; height: 46px; padding: 0 13px; border: 1px solid #3b526d; border-radius: 6px;
-      outline: none; color: var(--text); background: #0a1727; transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    input:focus, select:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(8, 201, 236, 0.12); }
-    input:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }
-    select { cursor: pointer; }
-    select option { background: #0a1727; }
-    .hint { display: block; margin-top: 8px; font-size: 12px; }
-
-    .actions { display: flex; gap: 10px; padding-bottom: 20px; }
-    
-    .btn {
-      height: 46px; padding: 0 19px; border: 1px solid var(--border); border-radius: 6px; color: #c9d5e5;
-      background: #14243a; cursor: pointer; white-space: nowrap; transition: transform 0.15s, filter 0.15s;
-    }
-    .btn:hover:not(:disabled) { border-color: #3c5675; filter: brightness(1.12); }
-    .btn:active:not(:disabled) { transform: translateY(1px); }
-    .btn:disabled { cursor: not-allowed; opacity: 0.5; }
-    .btn.primary { border-color: transparent; color: #00151d; background: linear-gradient(135deg, #08d6f8, #08aed3); font-weight: 750; }
-    .btn.stop:hover:not(:disabled) { border-color: var(--danger); color: #fff; }
-
-    .progress-row { display: grid; grid-template-columns: auto 1fr 100px; gap: 20px; align-items: center; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--border); }
-    .progress-track { overflow: hidden; height: 18px; border: 1px solid #29415e; border-radius: 10px; background: #07121f; }
-    .progress-bar { width: 0%; height: 100%; border-radius: inherit; background: repeating-linear-gradient(135deg, #08c9ec 0 12px, #0bb9da 12px 24px); box-shadow: 0 0 18px rgba(8, 201, 236, 0.28); transition: width 0.2s ease; }
-    .progress-value { color: var(--cyan); font-weight: 750; text-align: right; }
-
-    .results-layout { display: grid; grid-template-columns: 1.08fr 1fr; gap: 18px; }
-    .panel-heading { padding: 17px 20px; border-bottom: 1px solid var(--border); font-size: 17px; font-weight: 700; }
-    
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 14px 18px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-    th { color: #b9c9dd; font-weight: 550; }
-    td { color: #d2dceb; }
-    tbody tr:hover { background: rgba(8, 201, 236, 0.035); }
-
-    .badge { display: inline-block; padding: 3px 10px; border: 1px solid rgba(57, 220, 114, 0.45); border-radius: 5px; color: var(--green); background: rgba(57, 220, 114, 0.1); }
-    .badge.closed { border-color: #354b67; color: #a8b7ca; background: #15243a; }
-    .table-footer { padding: 20px; font-size: 12px; }
-
-    .terminal { height: 500px; overflow: auto; padding: 20px; color: #d9e2ee; background: #06101b; font: 12px/1.55 "Cascadia Code", monospace; white-space: pre-wrap; }
-    .mobile-toggle { display: none; }
-  </style>
-</head>
-<body>
-  <button class="btn mobile-toggle" id="menuButton" aria-label="Open navigation">Menu</button>
-
-  <div class="app">
-    <aside class="sidebar" id="sidebar">
-      <div class="brand"><span class="brand-mark">◎</span> SecurOS</div>
-      <nav class="nav" aria-label="Main navigation">
-        <a class="nav-item" href="/dashboard"><span class="nav-icon">▦</span>Dashboard</a>
-        <a class="nav-item active" href="/"><span class="nav-icon">◎</span>Nmap Scanner</a>
-        <a class="nav-item" href="/wireshark"><span class="nav-icon">☲</span>Wireshark Stream</a>
-        <a class="nav-item" href="#"><span class="nav-icon">◷</span>History</a>
-        <a class="nav-item" href="#"><span class="nav-icon">⚙</span>Settings</a>
-      </nav>
-      <div class="system-status">
-        <div class="status-title"><span class="status-dot"></span>System Status</div>
-        <small id="systemStatusText">All systems operational</small>
-      </div>
-    </aside>
-
-    <main>
-      <header class="page-header">
-        <h1>Nmap Scanner</h1>
-        <p>Network discovery and security auditing with Nmap</p>
-      </header>
-
-      <section class="panel controls" aria-label="Scan controls">
-        <div class="control-grid">
-          <div>
-            <label for="target">Target</label>
-            <input id="target" value="127.0.0.1" placeholder="IP, hostname, or CIDR">
-            <span class="hint">IP address, range, CIDR, or hostname</span>
-          </div>
-          <div>
-            <label for="profile">Scan Profile</label>
-            <select id="profile">
-              <option value="QUICK_SCAN">Quick Scan</option>
-              <option value="PING_SWEEP">Ping Sweep</option>
-              <option value="INTENSE_SCAN">Intense Scan</option>
-              <option value="VULN_AUDIT">Vulnerability Audit</option>
-              <option value="CUSTOM">Custom Ports</option>
-            </select>
-            <span class="hint">Predefined scan configurations</span>
-          </div>
-          <div>
-            <label for="ports">Ports</label>
-            <input id="ports" value="1-1000" placeholder="e.g. 22,80,443" disabled>
-            <span class="hint">Available with the Custom Ports profile</span>
-          </div>
-          <div class="actions">
-            <button class="btn primary" id="startButton">▶&nbsp; Start Scan</button>
-            <button class="btn stop" id="stopButton" disabled>■&nbsp; Cancel</button>
-            <button class="btn" id="clearButton">Clear</button>
-          </div>
-        </div>
-
-        <div class="progress-row">
-          <span>Scan Progress</span>
-          <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
-          <span class="progress-value" id="progressValue">Ready</span>
-        </div>
-      </section>
-
-      <div class="results-layout">
-        <section class="panel">
-          <div class="panel-heading">Scan Results</div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Host</th><th>Port</th><th>State</th><th>Service</th><th>Version</th></tr></thead>
-              <tbody id="resultsBody"></tbody>
-            </table>
-          </div>
-          <div class="table-footer" id="resultCount">No scan results</div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-heading">Live Output</div>
-          <div class="terminal" id="terminal">Ready. Configure an authorized target and start a scan.</div>
-        </section>
-      </div>
-    </main>
+<section class="panel controls" aria-label="Scan controls">
+  <div class="control-grid">
+    <div>
+      <label for="target">Target</label>
+      <input id="target" value="127.0.0.1" placeholder="IP, hostname, or CIDR">
+      <span class="hint">IP address, range, CIDR, or hostname</span>
+    </div>
+    <div>
+      <label for="profile">Scan Profile</label>
+      <select id="profile">
+        <option value="QUICK_SCAN">Quick Scan</option>
+        <option value="PING_SWEEP">Ping Sweep</option>
+        <option value="INTENSE_SCAN">Intense Scan</option>
+        <option value="VULN_AUDIT">Vulnerability Audit</option>
+        <option value="CUSTOM">Custom Ports</option>
+      </select>
+      <span class="hint">Predefined scan configurations</span>
+    </div>
+    <div>
+      <label for="ports">Ports</label>
+      <input id="ports" value="1-1000" placeholder="e.g. 22,80,443" disabled>
+      <span class="hint">Available with the Custom Ports profile</span>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="startButton">▶&nbsp; Start Scan</button>
+      <button class="btn stop" id="stopButton" disabled>■&nbsp; Cancel</button>
+      <button class="btn" id="clearButton">Clear</button>
+    </div>
   </div>
 
-  <script>
-    "use strict";
-    const startButton = document.getElementById("startButton");
-    const stopButton = document.getElementById("stopButton");
-    const clearButton = document.getElementById("clearButton");
-    const progressBar = document.getElementById("progressBar");
-    const progressValue = document.getElementById("progressValue");
-    const terminal = document.getElementById("terminal");
-    const resultsBody = document.getElementById("resultsBody");
-    const resultCount = document.getElementById("resultCount");
-    const profile = document.getElementById("profile");
-    const ports = document.getElementById("ports");
-    const targetInput = document.getElementById("target");
-    const systemStatusText = document.getElementById("systemStatusText");
+  <div class="progress-row">
+    <span>Scan Progress</span>
+    <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+    <span class="progress-value" id="progressValue">Ready</span>
+  </div>
+</section>
 
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/nmap`);
+<div class="results-layout">
+  <section class="panel">
+    <div class="panel-heading">Scan Results</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Host</th><th>Port</th><th>State</th><th>Service</th><th>Version</th></tr></thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </div>
+    <div class="table-footer" id="resultCount">No scan results</div>
+  </section>
 
-    function setStatus(label, percent) {
-      progressBar.style.width = `${percent}%`;
-      progressValue.textContent = label;
-    }
+  <section class="panel">
+    <div class="panel-heading">Live Output</div>
+    <div class="terminal" id="terminal">Ready. Configure an authorized target and start a scan.</div>
+  </section>
+</div>
+{% endblock %}
 
-    function addCell(row, value) {
-      const cell = document.createElement("td");
-      cell.textContent = value ?? "";
-      row.appendChild(cell);
-    }
+{% block scripts %}
+<script>
+  "use strict";
+  const startButton = document.getElementById("startButton");
+  const stopButton = document.getElementById("stopButton");
+  const clearButton = document.getElementById("clearButton");
+  const progressBar = document.getElementById("progressBar");
+  const progressValue = document.getElementById("progressValue");
+  const terminal = document.getElementById("terminal");
+  const resultsBody = document.getElementById("resultsBody");
+  const resultCount = document.getElementById("resultCount");
+  const profile = document.getElementById("profile");
+  const ports = document.getElementById("ports");
+  const targetInput = document.getElementById("target");
 
-    function renderResults(result) {
-      resultsBody.replaceChildren();
-      const discoveredPorts = Array.isArray(result.ports) ? result.ports : [];
-      discoveredPorts.forEach((item) => {
-        const row = document.createElement("tr");
-        addCell(row, item.dest_ip || result.target);
-        addCell(row, item.port);
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/nmap`);
 
-        const stateCell = document.createElement("td");
-        const badge = document.createElement("span");
-        const stateUpper = String(item.state).toUpperCase();
-        badge.className = `badge ${stateUpper === "OPEN" ? "" : "closed"}`;
-        badge.textContent = stateUpper.toLowerCase();
-        stateCell.appendChild(badge);
-        row.appendChild(stateCell);
+  function setStatus(label, percent) {
+    progressBar.style.width = `${percent}%`;
+    progressValue.textContent = label;
+  }
 
-        addCell(row, item.service);
-        
-        const versionCell = document.createElement("td");
-        versionCell.textContent = item.version;
-        if (String(item.version).includes("⚠️ VULNERABLE")) {
-          versionCell.style.color = "#ff6b7a";
-          versionCell.style.fontWeight = "bold";
-        }
-        row.appendChild(versionCell);
-        resultsBody.appendChild(row);
-      });
-      resultCount.textContent = discoveredPorts.length ? `Showing ${discoveredPorts.length} ports.` : "No ports discovered";
-    }
+  function addCell(row, value) {
+    const cell = document.createElement("td");
+    cell.textContent = value ?? "";
+    row.appendChild(cell);
+  }
 
-    ws.onmessage = function(event) {
-      const data = JSON.parse(event.data);
-      if (data.type === "TERMINAL_LINE") {
-        if (terminal.textContent.startsWith("Ready") || terminal.textContent.startsWith("Starting")) terminal.textContent = "";
-        terminal.textContent += data.text;
-        terminal.scrollTop = terminal.scrollHeight;
-      }
-      if (data.type === "PROGRESS_UPDATE") setStatus(data.label, data.percent);
-      if (data.type === "SCAN_COMPLETE") {
-        setScanning(false);
-        if (data.payload && data.payload.status === "success") {
-          renderResults(data.payload);
-          setStatus("Complete", 100);
-        } else {
-          // FIXED: Prevents infinite frontend loading loops when sub-scans drop
-          progressBar.style.width = "0%";
-          progressValue.textContent = "Finished / Stopped";
-        }
-      }
-    };
+  function renderResults(result) {
+    resultsBody.replaceChildren();
+    const discoveredPorts = Array.isArray(result.ports) ? result.ports : [];
+    discoveredPorts.forEach((item) => {
+      const row = document.createElement("tr");
+      addCell(row, item.dest_ip || result.target);
+      addCell(row, item.port);
 
-    function setScanning(scanning) {
-      startButton.disabled = scanning;
-      stopButton.disabled = !scanning;
-      profile.disabled = scanning;
-      ports.disabled = scanning || profile.value !== "CUSTOM";
-    }
+      const stateCell = document.createElement("td");
+      const badge = document.createElement("span");
+      const stateUpper = String(item.state).toUpperCase();
+      badge.className = `badge ${stateUpper === "OPEN" ? "" : "closed"}`;
+      badge.textContent = stateUpper.toLowerCase();
+      stateCell.appendChild(badge);
+      row.appendChild(stateCell);
 
-    profile.addEventListener("change", () => {
-      ports.disabled = profile.value !== "CUSTOM";
-    });
-
-    startButton.addEventListener("click", () => {
-      const target = targetInput.value.trim();
-      if (!target) return;
-      setScanning(true);
-      setStatus("Starting", 10);
+      addCell(row, item.service);
       
-      // FIXED: Packages custom_ports key matching your backend nmap.py parameters directly
-      ws.send(JSON.stringify({ 
-        "action": "RUN_NMAP", 
-        "target": target, 
-        "profile": profile.value, 
-        "custom_ports": profile.value === "CUSTOM" ? ports.value.trim() : null 
-      }));
+      const versionCell = document.createElement("td");
+      versionCell.textContent = item.version;
+      if (String(item.version).includes("⚠️ VULNERABLE")) {
+        versionCell.style.color = "#ff6b7a";
+        versionCell.style.fontWeight = "bold";
+      }
+      row.appendChild(versionCell);
+      resultsBody.appendChild(row);
     });
+    resultCount.textContent = discoveredPorts.length ? `Showing ${discoveredPorts.length} ports.` : "No ports discovered";
+  }
 
-    stopButton.addEventListener("click", () => {
+  ws.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    if (data.type === "TERMINAL_LINE") {
+      if (terminal.textContent.startsWith("Ready") || terminal.textContent.startsWith("Starting")) terminal.textContent = "";
+      terminal.textContent += data.text;
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+    if (data.type === "PROGRESS_UPDATE") setStatus(data.label, data.percent);
+    if (data.type === "SCAN_COMPLETE") {
       setScanning(false);
-      setStatus("Cancelled", 0);
-      progressBar.style.width = "0%";
-      
-      // FIXED: Sends an explicit termination frame to tell main.py to drop the taskkill process context
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ "action": "CANCEL_SCAN" }));
+      if (data.payload && data.payload.status === "success") {
+        renderResults(data.payload);
+        setStatus("Complete", 100);
+      } else {
+        progressBar.style.width = "0%";
+        progressValue.textContent = "Finished / Stopped";
       }
-    });
+    }
+  };
 
-    clearButton.addEventListener("click", () => {
-      setStatus("Ready", 0);
-      resultsBody.replaceChildren();
-      terminal.textContent = "Ready.";
-    });
+  function setScanning(scanning) {
+    startButton.disabled = scanning;
+    stopButton.disabled = !scanning;
+    profile.disabled = scanning;
+    ports.disabled = scanning || profile.value !== "CUSTOM";
+  }
 
-    document.getElementById("menuButton").addEventListener("click", () => {
-      document.getElementById("sidebar").classList.toggle("open");
-    });
-  </script>
-</body>
-</html>
+  profile.addEventListener("change", () => {
+    ports.disabled = profile.value !== "CUSTOM";
+  });
+
+  startButton.addEventListener("click", () => {
+    const target = targetInput.value.trim();
+    if (!target) return;
+    setScanning(true);
+    setStatus("Starting", 10);
+    
+    ws.send(JSON.stringify({ 
+      "action": "RUN_NMAP", 
+      "target": target, 
+      "profile": profile.value, 
+      "custom_ports": profile.value === "CUSTOM" ? ports.value.trim() : null 
+    }));
+  });
+
+  stopButton.addEventListener("click", () => {
+    setScanning(false);
+    setStatus("Cancelled", 0);
+    progressBar.style.width = "0%";
+    
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ "action": "CANCEL_SCAN" }));
+    }
+  });
+
+  clearButton.addEventListener("click", () => {
+    setStatus("Ready", 0);
+    resultsBody.replaceChildren();
+    terminal.textContent = "Ready.";
+  });
+</script>
+{% endblock %}

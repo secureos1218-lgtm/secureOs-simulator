@@ -1,421 +1,411 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>The Wireshark Network Analyzer - SecurOS</title>
-  <style>
-    :root {
-      --ws-bg: #1e1e1e; --ws-panel: #252526; --ws-border: #3c3c3c;
-      --ws-text: #e1e1e1; --ws-blue: #007acc; --ws-danger: #a61c1c;
-      --ws-green: #39dc72;
-    }
-    * { box-sizing: border-box; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
-    body { margin: 0; background: var(--ws-bg); color: var(--ws-text); display: flex; height: 100vh; overflow: hidden; }
+{% extends "base.html" %}
+{% set active_page = "wireshark" %}
 
-    .sidebar { width: 220px; background: var(--ws-panel); border-right: 1px solid var(--ws-border); padding: 15px; display: flex; flex-direction: column; gap: 20px; }
-    .brand { font-weight: bold; font-size: 16px; color: #fff; display: flex; align-items: center; gap: 8px; }
-    .nav-item { color: #ccc; text-decoration: none; font-size: 13px; padding: 8px; border-radius: 4px; }
-    .nav-item.active { background: #3c3c3c; color: #fff; }
+{% block title %}Wireshark Stream - SecurOS{% endblock %}
 
-    .workspace { flex: 1; display: flex; flex-direction: column; height: 100vh; }
+{% block extra_head %}
+<style>
+  :root {
+    --ws-bg: #1e1e1e; --ws-panel: #252526; --ws-border: #3c3c3c;
+    --ws-text: #e1e1e1; --ws-blue: #007acc; --ws-danger: #a61c1c;
+    --ws-green: #39dc72;
+  }
 
-    .capture-box { padding: 15px; background: var(--ws-panel); border-bottom: 1px solid var(--ws-border); }
-    .iface-list { background: #1e1e1e; border: 1px solid var(--ws-border); border-radius: 4px; padding: 5px; display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
-    .iface-row { padding: 6px 15px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; background: #252526; height: 42px; border: 1px solid #333; border-radius: 4px; cursor: pointer; }
-    .iface-row:hover { background: #2d2d2d; }
-    .iface-row.selected { background: var(--ws-blue) !important; color: #fff !important; border-color: var(--ws-blue); }
+  /* Override default main padding for Wireshark layout workspace */
+  main { padding: 0 !important; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
-    .filter-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-    .filter-input { flex: 1; background: #1e1e1e; border: 1px solid var(--ws-border); color: #e1e1e1; padding: 7px 10px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
-    .filter-input::placeholder { color: #666; }
-    .filter-input.invalid { border-color: var(--ws-danger); }
+  .workspace { flex: 1; display: flex; flex-direction: column; height: 100vh; }
 
-    .actions { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
-    .btn { height: 32px; padding: 0 16px; background: #333; color: #fff; border: 1px solid var(--ws-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s ease; }
-    .btn:disabled { opacity: 0.2; cursor: not-allowed; }
-    .btn.primary { background: var(--ws-blue); border: none; }
-    .btn.stop { background: var(--ws-danger); border: none; }
+  .capture-box { padding: 15px; background: var(--ws-panel); border-bottom: 1px solid var(--ws-border); }
+  .iface-list { background: #1e1e1e; border: 1px solid var(--ws-border); border-radius: 4px; padding: 5px; display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
+  .iface-row { padding: 6px 15px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; background: #252526; height: 42px; border: 1px solid #333; border-radius: 4px; cursor: pointer; }
+  .iface-row:hover { background: #2d2d2d; }
+  .iface-row.selected { background: var(--ws-blue) !important; color: #fff !important; border-color: var(--ws-blue); }
 
-    .sparkline-wrapper { width: 160px; height: 26px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; }
-    .sparkline-canvas { width: 100%; height: 100%; display: block; }
-    .throughput-label { font-size: 12px; font-weight: bold; color: var(--ws-green); margin-left: 8px; min-width: 70px; }
+  .filter-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .filter-input { flex: 1; background: #1e1e1e; border: 1px solid var(--ws-border); color: #e1e1e1; padding: 7px 10px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
+  .filter-input::placeholder { color: #666; }
+  .filter-input.invalid { border-color: var(--ws-danger); }
 
-    .pane-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .pane-list { flex: 1.5; overflow-y: auto; background: #1e1e1e; border-bottom: 3px solid var(--ws-border); }
-    table { width: 100%; border-collapse: collapse; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; table-layout: fixed; }
-    th { background: var(--ws-panel); position: sticky; top: 0; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--ws-border); color: #aaa; z-index: 10; }
-    td { padding: 5px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px dashed #2d2d2d; }
+  .actions { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
+  .ws-btn { height: 32px; padding: 0 16px; background: #333; color: #fff; border: 1px solid var(--ws-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s ease; }
+  .ws-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+  .ws-btn.primary { background: var(--ws-blue); border: none; }
+  .ws-btn.stop { background: var(--ws-danger); border: none; }
 
-    th:nth-child(1), td:nth-child(1) { width: 60px; }
-    th:nth-child(2), td:nth-child(2) { width: 90px; }
-    th:nth-child(3), td:nth-child(3) { width: 130px; }
-    th:nth-child(4), td:nth-child(4) { width: 130px; }
-    th:nth-child(5), td:nth-child(5) { width: 80px; }
-    th:nth-child(6), td:nth-child(6) { width: 80px; }
-    th:nth-child(7), td:nth-child(7) { width: auto; }
+  .sparkline-wrapper { width: 160px; height: 26px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; }
+  .sparkline-canvas { width: 100%; height: 100%; display: block; }
+  .throughput-label { font-size: 12px; font-weight: bold; color: var(--ws-green); margin-left: 8px; min-width: 70px; }
 
-    tr.selected-packet { background: #004b82 !important; color: #fff; }
-    tr:nth-child(even) { background: #252526; }
+  .pane-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .pane-list { flex: 1.5; overflow-y: auto; background: #1e1e1e; border-bottom: 3px solid var(--ws-border); }
+  table { width: 100%; border-collapse: collapse; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; table-layout: fixed; }
+  th { background: var(--ws-panel); position: sticky; top: 0; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--ws-border); color: #aaa; z-index: 10; }
+  td { padding: 5px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px dashed #2d2d2d; }
 
-    .pane-details { flex: 1; overflow-y: auto; background: #1e1e1e; border-bottom: 3px solid var(--ws-border); padding: 10px; font-size: 13px; }
-    .tree-node { margin-left: 15px; padding: 2px 0; color: #4ec9b0; font-family: monospace; }
-    .tree-header { font-weight: bold; cursor: pointer; color: #fff; margin-top: 4px; }
+  th:nth-child(1), td:nth-child(1) { width: 60px; }
+  th:nth-child(2), td:nth-child(2) { width: 90px; }
+  th:nth-child(3), td:nth-child(3) { width: 130px; }
+  th:nth-child(4), td:nth-child(4) { width: 130px; }
+  th:nth-child(5), td:nth-child(5) { width: 80px; }
+  th:nth-child(6), td:nth-child(6) { width: 80px; }
+  th:nth-child(7), td:nth-child(7) { width: auto; }
 
-    .pane-bytes { flex: 1; overflow-y: auto; background: #181818; padding: 10px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; color: #9cdcfe; white-space: pre; }
-    .status-bar { height: 24px; background: var(--ws-panel); border-top: 1px solid var(--ws-border); padding: 0 15px; display: flex; align-items: center; gap: 16px; font-size: 11px; color: #999; }
+  tr.selected-packet { background: #004b82 !important; color: #fff; }
+  tr:nth-child(even) { background: #252526; }
 
-    .proto-TCP { color: #569cd6; } .proto-UDP { color: #4ec9b0; } .proto-ICMP { color: #f44747; }
-    .proto-DNS { color: #c586c0; } .proto-HTTP { color: #dcdcaa; } .proto-TLS { color: #ce9178; }
-    
-    .row-spark-container { width: 100px; height: 22px; }
-  </style>
-</head>
-<body>
+  .pane-details { flex: 1; overflow-y: auto; background: #1e1e1e; border-bottom: 3px solid var(--ws-border); padding: 10px; font-size: 13px; }
+  .tree-node { margin-left: 15px; padding: 2px 0; color: #4ec9b0; font-family: monospace; }
+  .tree-header { font-weight: bold; cursor: pointer; color: #fff; margin-top: 4px; }
 
-  <aside class="sidebar">
-    <div class="brand">🦈 Wireshark</div>
-    <a class="nav-item active" href="/wireshark">Capture Workspace</a>
-    <a class="nav-item" href="/">Nmap Scanner</a>
-    <a class="nav-item" href="/dashboard">Dashboard</a>
-  </aside>
+  .pane-bytes { flex: 1; overflow-y: auto; background: #181818; padding: 10px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; color: #9cdcfe; white-space: pre; }
+  .status-bar { height: 24px; background: var(--ws-panel); border-top: 1px solid var(--ws-border); padding: 0 15px; display: flex; align-items: center; gap: 16px; font-size: 11px; color: #999; }
 
-  <div class="workspace">
-    <section class="capture-box">
-      <div class="iface-list" id="ifaceContainer">Loading network adapters...</div>
+  .proto-TCP { color: #569cd6; } .proto-UDP { color: #4ec9b0; } .proto-ICMP { color: #f44747; }
+  .proto-DNS { color: #c586c0; } .proto-HTTP { color: #dcdcaa; } .proto-TLS { color: #ce9178; }
+  
+  .row-spark-container { width: 100px; height: 22px; }
+</style>
+{% endblock %}
 
-      <div class="filter-row">
-        <input type="text" class="filter-input" id="filterInput"
-               placeholder="Display filter, e.g. tcp.port==443 or dns or ip.addr==192.168.1.1" />
-      </div>
+{% block content %}
+<div class="workspace">
+  <section class="capture-box">
+    <div class="iface-list" id="ifaceContainer">Loading network adapters...</div>
 
-      <div class="actions">
-        <button class="btn primary" id="btnStart" disabled>▶ Start</button>
-        <button class="btn stop" id="btnStop" disabled>■ Stop</button>
-        <div class="sparkline-wrapper"><canvas id="throughputSpark" class="sparkline-canvas"></canvas></div>
-        <span class="throughput-label" id="throughputLabel">0 B/s</span>
-      </div>
-    </section>
-
-    <div class="pane-container">
-      <div class="pane-list">
-        <table>
-          <thead>
-            <tr><th>No.</th><th>Time</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Length</th><th>Info</th></tr>
-          </thead>
-          <tbody id="packetListBody">
-            <tr><td colspan="7" style="text-align:center; color:#666; padding:40px;">Select an interface and hit Start.</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="pane-details" id="paneDetails">
-        <div style="color:#666;">No packet selected. Click a row to inspect its fields.</div>
-      </div>
-
-      <div class="pane-bytes" id="paneBytes">0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................</div>
+    <div class="filter-row">
+      <input type="text" class="filter-input" id="filterInput"
+             placeholder="Display filter, e.g. tcp.port==443 or dns or ip.addr==192.168.1.1" />
     </div>
 
-    <div class="status-bar">
-      <span id="lblStatus">Status: Idle</span>
-      <span id="lblCount">Packets: 0</span>
+    <div class="actions">
+      <button class="ws-btn primary" id="btnStart" disabled>▶ Start</button>
+      <button class="ws-btn stop" id="btnStop" disabled>■ Stop</button>
+      <div class="sparkline-wrapper"><canvas id="throughputSpark" class="sparkline-canvas"></canvas></div>
+      <span class="throughput-label" id="throughputLabel">0 B/s</span>
     </div>
+  </section>
+
+  <div class="pane-container">
+    <div class="pane-list">
+      <table>
+        <thead>
+          <tr><th>No.</th><th>Time</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Length</th><th>Info</th></tr>
+        </thead>
+        <tbody id="packetListBody">
+          <tr><td colspan="7" style="text-align:center; color:#666; padding:40px;">Select an interface and hit Start.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pane-details" id="paneDetails">
+      <div style="color:#666;">No packet selected. Click a row to inspect its fields.</div>
+    </div>
+
+    <div class="pane-bytes" id="paneBytes">0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................</div>
   </div>
 
-  <script>
-    "use strict";
-    const ifaceContainer = document.getElementById("ifaceContainer");
-    const filterInput = document.getElementById("filterInput");
-    const btnStart = document.getElementById("btnStart");
-    const btnStop = document.getElementById("btnStop");
-    const packetListBody = document.getElementById("packetListBody");
-    const paneDetails = document.getElementById("paneDetails");
-    const paneBytes = document.getElementById("paneBytes");
-    const lblStatus = document.getElementById("lblStatus");
-    const lblCount = document.getElementById("lblCount");
-    const throughputLabel = document.getElementById("throughputLabel");
+  <div class="status-bar">
+    <span id="lblStatus">Status: Idle</span>
+    <span id="lblCount">Packets: 0</span>
+  </div>
+</div>
+{% endblock %}
 
-    let selectedIface = null;
-    let isFirst = true;
-    let packetStore = [];          
-    let pendingRows = [];          
-    let flushScheduled = false;
-    let bytesSinceLastTick = 0;
-    let selectedRowEl = null;
-    let activeIntervals = [];
+{% block scripts %}
+<script>
+  "use strict";
+  const ifaceContainer = document.getElementById("ifaceContainer");
+  const filterInput = document.getElementById("filterInput");
+  const btnStart = document.getElementById("btnStart");
+  const btnStop = document.getElementById("btnStop");
+  const packetListBody = document.getElementById("packetListBody");
+  const paneDetails = document.getElementById("paneDetails");
+  const paneBytes = document.getElementById("paneBytes");
+  const lblStatus = document.getElementById("lblStatus");
+  const lblCount = document.getElementById("lblCount");
+  const throughputLabel = document.getElementById("throughputLabel");
 
-    const MAX_RENDERED_ROWS = 800; 
-    const ws = new WebSocket(`ws://${window.location.host}/ws/wireshark`);
+  let selectedIface = null;
+  let isFirst = true;
+  let packetStore = [];          
+  let pendingRows = [];          
+  let flushScheduled = false;
+  let bytesSinceLastTick = 0;
+  let selectedRowEl = null;
+  let activeIntervals = [];
 
-    async function fetchAdapters() {
-      const res = await fetch("/api/wireshark/interfaces");
-      const list = await res.json();
-      ifaceContainer.replaceChildren();
-      activeIntervals.forEach(id => clearInterval(id));
-      activeIntervals = [];
+  const MAX_RENDERED_ROWS = 800; 
+  const ws = new WebSocket(`ws://${window.location.host}/ws/wireshark`);
 
-      if (!list.length) {
-        ifaceContainer.textContent = "No interfaces found.";
-        return;
+  async function fetchAdapters() {
+    const res = await fetch("/api/wireshark/interfaces");
+    const list = await res.json();
+    ifaceContainer.replaceChildren();
+    activeIntervals.forEach(id => clearInterval(id));
+    activeIntervals = [];
+
+    if (!list.length) {
+      ifaceContainer.textContent = "No interfaces found.";
+      return;
+    }
+
+    list.forEach((iface, idx) => {
+      const r = document.createElement("div");
+      r.className = "iface-row" + (idx === 0 ? " selected" : "");
+      
+      const canvasId = `row_spark_${idx}`;
+      r.innerHTML = `
+        <span style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%;">${escapeHtml(iface.name)}</span>
+        <div class="row-spark-container"><canvas id="${canvasId}" style="width:100%; height:100%;"></canvas></div>
+      `;
+      
+      r.onclick = () => {
+        if (btnStart.textContent === "⚙ Sniffing...") return; 
+        document.querySelectorAll(".iface-row").forEach(row => row.classList.remove("selected"));
+        r.classList.add("selected");
+        selectedIface = iface.id;
+      };
+      
+      ifaceContainer.appendChild(r);
+      if (idx === 0) selectedIface = iface.id;
+
+      const nameLower = iface.name.toLowerCase();
+      const isLive = nameLower.includes("wi-fi") || nameLower.includes("mediatek") || nameLower.includes("ethernet") || nameLower.includes("realtek");
+      initInterfaceRowSparkline(canvasId, isLive);
+    });
+
+    btnStart.disabled = false;
+  }
+
+  function initInterfaceRowSparkline(canvasId, isLive) {
+    const cvs = document.getElementById(canvasId); if(!cvs) return;
+    const ctx = cvs.getContext("2d");
+    cvs.width = 100; cvs.height = 22;
+    let history = Array(30).fill(cvs.height - 2);
+
+    const iv = setInterval(() => {
+      history.shift();
+      let next = cvs.height - 2;
+      if(isLive) {
+        next = cvs.height - Math.floor(Math.random() * 3) - 2;
+        if(Math.random() > 0.85) next = Math.floor(Math.random() * (cvs.height * 0.4));
       }
+      history.push(next);
 
-      list.forEach((iface, idx) => {
-        const r = document.createElement("div");
-        r.className = "iface-row" + (idx === 0 ? " selected" : "");
-        
-        const canvasId = `row_spark_${idx}`;
-        r.innerHTML = `
-          <span style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%;">${escapeHtml(iface.name)}</span>
-          <div class="row-spark-container"><canvas id="${canvasId}" style="width:100%; height:100%;"></canvas></div>
-        `;
-        
-        r.onclick = () => {
-          if (btnStart.textContent === "⚙ Sniffing...") return; 
-          document.querySelectorAll(".iface-row").forEach(row => row.classList.remove("selected"));
-          r.classList.add("selected");
-          selectedIface = iface.id;
-        };
-        
-        ifaceContainer.appendChild(r);
-        if (idx === 0) selectedIface = iface.id;
-
-        const nameLower = iface.name.toLowerCase();
-        const isLive = nameLower.includes("wi-fi") || nameLower.includes("mediatek") || nameLower.includes("ethernet") || nameLower.includes("realtek");
-        initInterfaceRowSparkline(canvasId, isLive);
+      ctx.clearRect(0,0,cvs.width,cvs.height);
+      ctx.beginPath();
+      ctx.strokeStyle = isLive ? "#39dc72" : "#555555";
+      ctx.lineWidth = 1.0;
+      history.forEach((y, i) => {
+        if(i === 0) ctx.moveTo(0, y); else ctx.lineTo(i * 100/29, y);
       });
+      ctx.stroke();
+    }, 120);
+    activeIntervals.push(iv);
+  }
 
+  fetchAdapters();
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = String(str ?? "");
+    return div.innerHTML;
+  }
+
+  const sparkCanvas = document.getElementById("throughputSpark");
+  const sparkCtx = sparkCanvas.getContext("2d");
+  sparkCanvas.width = 150; sparkCanvas.height = 26;
+  let throughputPoints = Array(45).fill(sparkCanvas.height - 2);
+
+  setInterval(() => {
+    const bytesPerSec = bytesSinceLastTick;
+    bytesSinceLastTick = 0;
+
+    throughputLabel.textContent = formatBytes(bytesPerSec) + "/s";
+
+    const maxScaleBytes = 50000; 
+    const normalized = Math.min(bytesPerSec / maxScaleBytes, 1);
+    const y = sparkCanvas.height - 2 - normalized * (sparkCanvas.height - 4);
+
+    throughputPoints.shift();
+    throughputPoints.push(y);
+
+    sparkCtx.clearRect(0, 0, sparkCanvas.width, sparkCanvas.height);
+    sparkCtx.beginPath();
+    sparkCtx.strokeStyle = "#4ec9b0";
+    sparkCtx.lineWidth = 1.4;
+    sparkCtx.lineJoin = "round";
+    throughputPoints.forEach((yp, i) => {
+      if (i === 0) sparkCtx.moveTo(0, yp); else sparkCtx.lineTo(i * 150 / 44, yp);
+    });
+    sparkCtx.stroke();
+  }, 1000);
+
+  function formatBytes(n) {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function updateInterfaceState(state) {
+    if (state === "STARTING") {
+      btnStart.textContent = "⚙ Starting...";
+      btnStart.disabled = true;
+      btnStop.disabled = false; 
+      lblStatus.innerHTML = `<span>Initializing Npcap Driver Binding...</span>`;
+    } else if (state === "RUNNING") {
+      btnStart.textContent = "⚙ Sniffing...";
+      btnStart.disabled = true;
+      btnStop.disabled = false;
+      lblStatus.innerHTML = `<span style="color:#4ec9b0; font-weight:bold;">● LIVE PACKET STREAMING ACTIVE</span>`;
+      filterInput.classList.remove("invalid");
+    } else if (state === "STOPPING") {
+      btnStop.textContent = "■ Stopping...";
+      btnStart.disabled = true;
+      btnStop.disabled = true;
+      lblStatus.innerHTML = `<span>Flushing system sockets and tearing down hook frames...</span>`;
+    } else if (state === "IDLE") {
+      btnStart.textContent = "▶ Start";
+      btnStop.textContent = "■ Stop";
       btnStart.disabled = false;
+      btnStop.disabled = true;
+      lblStatus.innerHTML = `<span>○ Sniffer Idle</span>`;
     }
+  }
 
-    function initInterfaceRowSparkline(canvasId, isLive) {
-      const cvs = document.getElementById(canvasId); if(!cvs) return;
-      const ctx = cvs.getContext("2d");
-      cvs.width = 100; cvs.height = 22;
-      let history = Array(30).fill(cvs.height - 2);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
 
-      const iv = setInterval(() => {
-        history.shift();
-        let next = cvs.height - 2;
-        if(isLive) {
-          next = cvs.height - Math.floor(Math.random() * 3) - 2;
-          if(Math.random() > 0.85) next = Math.floor(Math.random() * (cvs.height * 0.4));
-        }
-        history.push(next);
-
-        ctx.clearRect(0,0,cvs.width,cvs.height);
-        ctx.beginPath();
-        ctx.strokeStyle = isLive ? "#39dc72" : "#555555";
-        ctx.lineWidth = 1.0;
-        history.forEach((y, i) => {
-          if(i === 0) ctx.moveTo(0, y); else ctx.lineTo(i * 100/29, y);
-        });
-        ctx.stroke();
-      }, 120);
-      activeIntervals.push(iv);
+    if (msg.type === "CAPTURE_STARTED") {
+      updateInterfaceState("RUNNING");
     }
-
-    fetchAdapters();
-
-    function escapeHtml(str) {
-      const div = document.createElement("div");
-      div.textContent = String(str ?? "");
-      return div.innerHTML;
+    else if (msg.type === "CAPTURE_ERROR") {
+      updateInterfaceState("IDLE");
+      lblStatus.innerHTML = `<span style="color:#f44747; font-weight:bold;">Capture Error: ${escapeHtml(msg.message)}</span>`;
+      filterInput.classList.add("invalid");
     }
-
-    const sparkCanvas = document.getElementById("throughputSpark");
-    const sparkCtx = sparkCanvas.getContext("2d");
-    sparkCanvas.width = 150; sparkCanvas.height = 26;
-    let throughputPoints = Array(45).fill(sparkCanvas.height - 2);
-
-    setInterval(() => {
-      const bytesPerSec = bytesSinceLastTick;
-      bytesSinceLastTick = 0;
-
-      throughputLabel.textContent = formatBytes(bytesPerSec) + "/s";
-
-      const maxScaleBytes = 50000; 
-      const normalized = Math.min(bytesPerSec / maxScaleBytes, 1);
-      const y = sparkCanvas.height - 2 - normalized * (sparkCanvas.height - 4);
-
-      throughputPoints.shift();
-      throughputPoints.push(y);
-
-      sparkCtx.clearRect(0, 0, sparkCanvas.width, sparkCanvas.height);
-      sparkCtx.beginPath();
-      sparkCtx.strokeStyle = "#4ec9b0";
-      sparkCtx.lineWidth = 1.4;
-      sparkCtx.lineJoin = "round";
-      throughputPoints.forEach((yp, i) => {
-        if (i === 0) sparkCtx.moveTo(0, yp); else sparkCtx.lineTo(i * 150 / 44, yp);
-      });
-      sparkCtx.stroke();
-    }, 1000);
-
-    function formatBytes(n) {
-      if (n < 1024) return `${n} B`;
-      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-      return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-    }
-
-    function updateInterfaceState(state) {
-      if (state === "STARTING") {
-        btnStart.textContent = "⚙ Starting...";
-        btnStart.disabled = true;
-        btnStop.disabled = false; 
-        lblStatus.innerHTML = `<span>Initializing Npcap Driver Binding...</span>`;
-      } else if (state === "RUNNING") {
-        btnStart.textContent = "⚙ Sniffing...";
-        btnStart.disabled = true;
-        btnStop.disabled = false;
-        lblStatus.innerHTML = `<span style="color:#4ec9b0; font-weight:bold;">● LIVE PACKET STREAMING ACTIVE</span>`;
-        filterInput.classList.remove("invalid");
-      } else if (state === "STOPPING") {
-        btnStop.textContent = "■ Stopping...";
-        btnStart.disabled = true;
-        btnStop.disabled = true;
-        lblStatus.innerHTML = `<span>Flushing system sockets and tearing down hook frames...</span>`;
-      } else if (state === "IDLE") {
-        btnStart.textContent = "▶ Start";
-        btnStop.textContent = "■ Stop";
-        btnStart.disabled = false;
-        btnStop.disabled = true;
-        lblStatus.innerHTML = `<span>○ Sniffer Idle</span>`;
-      }
-    }
-
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-
-      if (msg.type === "CAPTURE_STARTED") {
-        updateInterfaceState("RUNNING");
-      }
-      else if (msg.type === "CAPTURE_ERROR") {
-        updateInterfaceState("IDLE");
-        lblStatus.innerHTML = `<span style="color:#f44747; font-weight:bold;">Capture Error: ${escapeHtml(msg.message)}</span>`;
-        filterInput.classList.add("invalid");
-      }
-      else if (msg.type === "PACKET_ROW") {
-        const pkt = msg.data;
-        if (!pkt || typeof pkt !== 'object') return;
-        
-        packetStore.push(pkt);
-        bytesSinceLastTick += pkt.length || 0;
-        pendingRows.push(pkt);
-        scheduleFlush();
-      }
-      else if (msg.type === "CAPTURE_COMPLETE" || msg.type === "CAPTURE_STOPPED") {
-        updateInterfaceState("IDLE");
-      }
-    };
-
-    function scheduleFlush() {
-      if (flushScheduled) return;
-      flushScheduled = true;
-      requestAnimationFrame(flushPendingRows);
-    }
-
-    function flushPendingRows() {
-      flushScheduled = false;
-      if (!pendingRows.length) return;
-
-      if (isFirst) { packetListBody.replaceChildren(); isFirst = false; }
-
-      const frag = document.createDocumentFragment();
-      pendingRows.forEach(pkt => {
-        // FIXED: Safe dynamic formatting boundaries separate text columns permanently
-        const num = pkt.number ?? "?";
-        const timeVal = pkt.time ?? "0.000000";
-        const src = pkt.source ?? "0.0.0.0";
-        const dst = pkt.destination ?? "0.0.0.0";
-        const proto = pkt.protocol ?? "RAW";
-        const len = pkt.length ?? "0";
-        const infoMsg = pkt.info ?? "Processing transmission segment...";
-
-        const tr = document.createElement("tr");
-        tr.className = `proto-${proto}`;
-        tr.dataset.pktNumber = num;
-        tr.innerHTML = `
-          <td>${num}</td>
-          <td>${timeVal}</td>
-          <td>${escapeHtml(src)}</td>
-          <td>${escapeHtml(dst)}</td>
-          <td><strong>${escapeHtml(proto)}</strong></td>
-          <td>${len}</td>
-          <td>${escapeHtml(infoMsg)}</td>
-        `;
-        tr.onclick = () => {
-          if (selectedRowEl) selectedRowEl.classList.remove("selected-packet");
-          tr.classList.add("selected-packet");
-          selectedRowEl = tr;
-          renderDissectorTree(pkt);
-        };
-        frag.appendChild(tr);
-      });
-
-      packetListBody.insertBefore(frag, packetListBody.firstChild);
-      pendingRows = [];
-
-      while (packetListBody.children.length > MAX_RENDERED_ROWS) {
-        packetListBody.removeChild(packetListBody.lastChild);
-      }
-
-      lblCount.textContent = `Packets: ${packetStore.length}`;
-    }
-
-    function renderDissectorTree(pkt) {
-      if (!pkt || !pkt.trees) return;
-      paneBytes.textContent = pkt.hex || ""; 
-      paneDetails.replaceChildren();
+    else if (msg.type === "PACKET_ROW") {
+      const pkt = msg.data;
+      if (!pkt || typeof pkt !== 'object') return;
       
-      if (pkt.trees.frame) {
-        createTreeSection(pkt.trees.frame, [`Arrival Delta: ${pkt.time} seconds`, `Frame Capture Size: ${pkt.length} bytes`]);
-      }
-      if (pkt.trees.ethernet) {
-        createTreeSection(`Ethernet II, Src: ${pkt.trees.ethernet.src_mac || "00:00:00:00:00:00"}, Dst: ${pkt.trees.ethernet.dst_mac || "00:00:00:00:00:00"}`,
-          [`Destination Link Addr: ${pkt.trees.ethernet.dst_mac || "00:00:00:00:00:00"}`, `Source Link Addr: ${pkt.trees.ethernet.src_mac || "00:00:00:00:00:00"}`]);
-      }
-      if (pkt.trees.ip) {
-        createTreeSection(`Internet Protocol Header Metric Fields`,
-          [`Version Identifier: ${pkt.trees.ip.version || "N/A"}`, `Header Segment Depth: ${pkt.trees.ip.ihl || "N/A"}`, `Time to Live Vector: ${pkt.trees.ip.ttl || "N/A"}`]);
-      }
-      if (pkt.trees.l4) {
-        createTreeSection(`${pkt.protocol} Segment Header Layer Boundaries`, 
-          [`Source Access Port: ${pkt.trees.l4.src_port || "N/A"}`, `Destination Access Port: ${pkt.trees.l4.dst_port || "N/A"}`]);
-      }
-      if (pkt.trees.app) {
-        const app = pkt.trees.app;
-        if (app.kind === "HTTP") {
-          createTreeSection(`Hypertext Transfer Protocol Application Frame Payload`, app.headers || [app.summary]);
-        } else if (app.kind === "DNS") {
-          createTreeSection(`Domain Name System Application Frame Payload`, app.is_response ? (app.answers || [app.summary]) : [`Query Line: ${app.query}`]);
-        } else if (app.kind === "TLS") {
-          createTreeSection(`Transport Layer Security Application Layer Payload`, [`Server Name Parameter: ${app.sni}`]);
-        }
-      }
+      packetStore.push(pkt);
+      bytesSinceLastTick += pkt.length || 0;
+      pendingRows.push(pkt);
+      scheduleFlush();
+    }
+    else if (msg.type === "CAPTURE_COMPLETE" || msg.type === "CAPTURE_STOPPED") {
+      updateInterfaceState("IDLE");
+    }
+  };
+
+  function scheduleFlush() {
+    if (flushScheduled) return;
+    flushScheduled = true;
+    requestAnimationFrame(flushPendingRows);
+  }
+
+  function flushPendingRows() {
+    flushScheduled = false;
+    if (!pendingRows.length) return;
+
+    if (isFirst) { packetListBody.replaceChildren(); isFirst = false; }
+
+    const frag = document.createDocumentFragment();
+    pendingRows.forEach(pkt => {
+      const num = pkt.number ?? "?";
+      const timeVal = pkt.time ?? "0.000000";
+      const src = pkt.source ?? "0.0.0.0";
+      const dst = pkt.destination ?? "0.0.0.0";
+      const proto = pkt.protocol ?? "RAW";
+      const len = pkt.length ?? "0";
+      const infoMsg = pkt.info ?? "Processing transmission segment...";
+
+      const tr = document.createElement("tr");
+      tr.className = `proto-${proto}`;
+      tr.dataset.pktNumber = num;
+      tr.innerHTML = `
+        <td>${num}</td>
+        <td>${timeVal}</td>
+        <td>${escapeHtml(src)}</td>
+        <td>${escapeHtml(dst)}</td>
+        <td><strong>${escapeHtml(proto)}</strong></td>
+        <td>${len}</td>
+        <td>${escapeHtml(infoMsg)}</td>
+      `;
+      tr.onclick = () => {
+        if (selectedRowEl) selectedRowEl.classList.remove("selected-packet");
+        tr.classList.add("selected-packet");
+        selectedRowEl = tr;
+        renderDissectorTree(pkt);
+      };
+      frag.appendChild(tr);
+    });
+
+    packetListBody.insertBefore(frag, packetListBody.firstChild);
+    pendingRows = [];
+
+    while (packetListBody.children.length > MAX_RENDERED_ROWS) {
+      packetListBody.removeChild(packetListBody.lastChild);
     }
 
-    function createTreeSection(headerText, lines) {
-      const h = document.createElement("div"); h.className = "tree-header"; h.textContent = `▼ ${headerText}`; paneDetails.appendChild(h);
-      lines.forEach(text => { const n = document.createElement("div"); n.className = "tree-node"; n.textContent = ` └─ ${text}`; paneDetails.appendChild(n); });
+    lblCount.textContent = `Packets: ${packetStore.length}`;
+  }
+
+  function renderDissectorTree(pkt) {
+    if (!pkt || !pkt.trees) return;
+    paneBytes.textContent = pkt.hex || ""; 
+    paneDetails.replaceChildren();
+    
+    if (pkt.trees.frame) {
+      createTreeSection(pkt.trees.frame, [`Arrival Delta: ${pkt.time} seconds`, `Frame Capture Size: ${pkt.length} bytes`]);
     }
+    if (pkt.trees.ethernet) {
+      createTreeSection(`Ethernet II, Src: ${pkt.trees.ethernet.src_mac || "00:00:00:00:00:00"}, Dst: ${pkt.trees.ethernet.dst_mac || "00:00:00:00:00:00"}`,
+        [`Destination Link Addr: ${pkt.trees.ethernet.dst_mac || "00:00:00:00:00:00"}`, `Source Link Addr: ${pkt.trees.ethernet.src_mac || "00:00:00:00:00:00"}`]);
+    }
+    if (pkt.trees.ip) {
+      createTreeSection(`Internet Protocol Header Metric Fields`,
+        [`Version Identifier: ${pkt.trees.ip.version || "N/A"}`, `Header Segment Depth: ${pkt.trees.ip.ihl || "N/A"}`, `Time to Live Vector: ${pkt.trees.ip.ttl || "N/A"}`]);
+    }
+    if (pkt.trees.l4) {
+      createTreeSection(`${pkt.protocol} Segment Header Layer Boundaries`, 
+        [`Source Access Port: ${pkt.trees.l4.src_port || "N/A"}`, `Destination Access Port: ${pkt.trees.l4.dst_port || "N/A"}`]);
+    }
+    if (pkt.trees.app) {
+      const app = pkt.trees.app;
+      if (app.kind === "HTTP") {
+        createTreeSection(`Hypertext Transfer Protocol Application Frame Payload`, app.headers || [app.summary]);
+      } else if (app.kind === "DNS") {
+        createTreeSection(`Domain Name System Application Frame Payload`, app.is_response ? (app.answers || [app.summary]) : [`Query Line: ${app.query}`]);
+      } else if (app.kind === "TLS") {
+        createTreeSection(`Transport Layer Security Application Layer Payload`, [`Server Name Parameter: ${app.sni}`]);
+      }
+    }
+  }
 
-    btnStart.onclick = () => {
-      if (!selectedIface) return;
-      isFirst = true; packetStore = []; pendingRows = []; bytesSinceLastTick = 0;
-      lblCount.textContent = "Packets: 0";
-      
-      updateInterfaceState("STARTING");
-      
-      ws.send(JSON.stringify({
-        action: "START_CAPTURE",
-        interface: selectedIface,
-        filter: filterInput.value.trim()
-      }));
-    };
+  function createTreeSection(headerText, lines) {
+    const h = document.createElement("div"); h.className = "tree-header"; h.textContent = `▼ ${headerText}`; paneDetails.appendChild(h);
+    lines.forEach(text => { const n = document.createElement("div"); n.className = "tree-node"; n.textContent = ` └─ ${text}`; paneDetails.appendChild(n); });
+  }
 
-    btnStop.onclick = () => {
-      updateInterfaceState("STOPPING");
-      ws.send(JSON.stringify({ action: "STOP_CAPTURE" }));
-    };
-  </script>
-</body>
-</html>
+  btnStart.onclick = () => {
+    if (!selectedIface) return;
+    isFirst = true; packetStore = []; pendingRows = []; bytesSinceLastTick = 0;
+    lblCount.textContent = "Packets: 0";
+    
+    updateInterfaceState("STARTING");
+    
+    ws.send(JSON.stringify({
+      action: "START_CAPTURE",
+      interface: selectedIface,
+      filter: filterInput.value.trim()
+    }));
+  };
+
+  btnStop.onclick = () => {
+    updateInterfaceState("STOPPING");
+    ws.send(JSON.stringify({ action: "STOP_CAPTURE" }));
+  };
+</script>
+{% endblock %}
