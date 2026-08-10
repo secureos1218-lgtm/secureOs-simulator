@@ -15,17 +15,21 @@ from simple_websocket import ConnectionClosed
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# Native Module Imports matching your exact workspace file layout
+# Native Module Imports matching workspace file layout
 from core.wireshark import WiresharkEngine
 from core.nmap import NmapEngine
 from core.fuzzer import FfufEngine
 from core.nuclei import NucleiEngine
+from core.assistant import SecurityAssistant
 
 app = Flask(__name__, template_folder="templates")
 sock = Sock(app)
 
 # Global tracking matrix to isolate running process thread handles
 ACTIVE_SCANS = {}
+
+# Initialize SecurOS AI Assistant Engine
+sec_assistant = SecurityAssistant()
 
 # ==========================================
 # 0. SAFE FIREBASE FIRESTORE INITIALIZATION
@@ -134,7 +138,34 @@ def get_firestore_history():
 
 
 # ==========================================
-# 3. DIGITAL STEGANOGRAPHY & FORENSICS API
+# 3. SECUROS AI ASSISTANT REST API ENDPOINTS
+# ==========================================
+
+@app.route("/api/assistant/explain-scan", methods=["POST"])
+def explain_scan():
+    """Receives active scan payloads and generates AI risk summaries and mitigation guides."""
+    payload = request.get_json() or {}
+    tool = payload.get("tool", "Nmap")
+    data = payload.get("data", {})
+    
+    explanation = sec_assistant.explain_scan_telemetry(tool, data)
+    return jsonify({"status": "success", "explanation": explanation})
+
+@app.route("/api/assistant/chat", methods=["POST"])
+def chat_assistant():
+    """Processes user questions against ChromaDB RAG Vector Store and Gemini LLM."""
+    payload = request.get_json() or {}
+    query = payload.get("query", "")
+    
+    if not query:
+        return jsonify({"status": "error", "message": "Query string required."}), 400
+        
+    answer = sec_assistant.query_cyber_knowledge(query)
+    return jsonify({"status": "success", "answer": answer})
+
+
+# ==========================================
+# 4. DIGITAL STEGANOGRAPHY & FORENSICS API
 # ==========================================
 
 def text_to_bits(text):
@@ -246,7 +277,7 @@ def analyze_bit_plane():
 
 
 # ==========================================
-# 4. ASYNCHRONOUS NMAP ENGINE WEBSOCKET ROUTE
+# 5. ASYNCHRONOUS NMAP ENGINE WEBSOCKET ROUTE
 # ==========================================
 
 @sock.route("/ws/nmap")
@@ -338,7 +369,7 @@ def websocket_nmap_endpoint(ws):
 
 
 # ==========================================
-# 5. WIRESHARK REST API ENDPOINTS
+# 6. WIRESHARK REST API ENDPOINTS
 # ==========================================
 
 @app.get("/api/wireshark/interfaces")
@@ -347,7 +378,7 @@ def get_network_interfaces():
 
 
 # ==========================================
-# 6. LIVE WEBSOCKET PACKET CAPTURE STREAM
+# 7. LIVE WEBSOCKET PACKET CAPTURE STREAM
 # ==========================================
 
 @sock.route("/ws/wireshark")
@@ -406,7 +437,7 @@ def websocket_wireshark_endpoint(ws):
 
 
 # ==========================================
-# 7. WEBSOCKET ENDPOINTS FOR FFUF & NUCLEI
+# 8. WEBSOCKET ENDPOINTS FOR FFUF & NUCLEI
 # ==========================================
 
 @sock.route("/ws/fuzzer")

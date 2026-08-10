@@ -1,6 +1,14 @@
-﻿venv/
+﻿# Virtual Environment
+venv/
+ENV/
+env/
+
+# Sensitive Firebase Keys
 firebase_key.json
-*.json
-!package.json
+
+# Local Vector Database (Optional to ignore if heavy, or keep if small)
+cyber_kb/
+
+# Python Bytecode
 __pycache__/
 *.py[cod]
