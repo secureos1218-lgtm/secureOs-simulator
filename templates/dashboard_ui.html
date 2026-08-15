@@ -19,6 +19,14 @@
   .panel-heading { padding: 17px 20px; border-bottom: 1px solid var(--border); font-size: 17px; font-weight: 700; }
   .filter-input { height: 34px; background: #0a1727; border: 1px solid #3b526d; border-radius: 4px; color: #fff; padding: 0 10px; }
 
+  /* Master Report Action Bar */
+  .master-report-panel { padding: 20px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--glass-panel); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; }
+  .btn-export { padding: 9px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s ease; }
+  .btn-html { background: #0f766e; color: #fff; border-color: #14b8a6; }
+  .btn-html:hover { background: #115e59; }
+  .btn-md { background: #1e3a5f; color: #fff; border-color: #3b82f6; }
+  .btn-md:hover { background: #254a78; }
+
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 14px 18px; border-bottom: 1px solid var(--border); text-align: left; }
@@ -37,6 +45,18 @@
   <h1>Security Dashboard</h1>
   <p>Real-time high-level global threat telemetry metrics and indicators</p>
 </header>
+
+<!-- MASTER CONSOLIDATED VAPT ENGAGEMENT REPORT PANEL -->
+<section class="master-report-panel">
+  <div>
+    <h3 style="margin: 0; color: var(--cyan); font-size: 17px;">📑 Master VAPT Engagement Audit</h3>
+    <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--muted);">Generate a unified executive report consolidating Nmap port mapping, Nuclei CVEs, and web fuzzing telemetry.</p>
+  </div>
+  <div style="display: flex; gap: 10px;">
+    <button class="btn-export btn-html" id="btnMasterExportHtml">📄 Export Full Audit (HTML/PDF)</button>
+    <button class="btn-export btn-md" id="btnMasterExportMd">📝 Export Markdown (.md)</button>
+  </div>
+</section>
 
 <div class="dashboard-grid">
   <div class="widget-panel">
@@ -74,8 +94,8 @@
         <tr><th>Source Entity</th><th>Classification Tag</th><th>Risk Profile Velocity</th><th>Last Activity</th><th>State Status</th></tr>
       </thead>
       <tbody>
-        <tr><td><strong>pranay.kumar@muj.edu</strong></td><td><span style="color:var(--neon-purple)">Cross-Platform/Malware</span></td><td><div class="risk-indicator-bar"><div class="risk-fill" style="width: 85%; background: var(--danger);"></div></div></td><td>Jun 21, 2026 13:42</td><td><span class="badge">Critical</span></td></tr>
-        <tr><td><strong>gateway.router.internal</strong></td><td><span style="color:var(--neon-amber)">Brute Force/Auth Anomaly</span></td><td><div class="risk-indicator-bar"><div class="risk-fill" style="width: 55%; background: var(--neon-amber);"></div></div></td><td>Jun 21, 2026 13:11</td><td><span class="badge warning">Warning</span></td></tr>
+        <tr><td><strong>admin.workstation.internal</strong></td><td><span style="color:var(--neon-purple)">Cross-Platform/Malware</span></td><td><div class="risk-indicator-bar"><div class="risk-fill" style="width: 85%; background: var(--danger);"></div></div></td><td>Active Stream</td><td><span class="badge">Critical</span></td></tr>
+        <tr><td><strong>gateway.router.internal</strong></td><td><span style="color:var(--neon-amber)">Brute Force/Auth Anomaly</span></td><td><div class="risk-indicator-bar"><div class="risk-fill" style="width: 55%; background: var(--neon-amber);"></div></div></td><td>Active Stream</td><td><span class="badge warning">Warning</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -97,5 +117,42 @@
     data: { labels: ['11:00', '12:00', '13:00', '14:00'], datasets: [{ label: 'Open', data: [12, 19, 25, 32], backgroundColor: '#f59e0b' }, { label: 'Resolved', data: [24, 35, 28, 40], backgroundColor: '#39dc72' }] },
     options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } } }
   });
+
+  async function exportMasterEngagementReport(format) {
+    const target = "Enterprise Environment Target";
+    const filename = `Master_VAPT_Engagement_Report.${format === "html" ? "html" : "md"}`;
+
+    try {
+      const response = await fetch("/api/reports/export-universal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: target,
+          nmap_data: { ports: [{ port: 80, proto: "tcp", state: "open", service: "http", version: "Apache 2.4.52" }, { port: 445, proto: "tcp", state: "open", service: "microsoft-ds", version: "Windows Server 2022" }] },
+          nuclei_data: [{ template_id: "cve-2021-44228", severity: "critical", matched_at: "http://target:8080" }],
+          fuzz_data: [{ status: 200, url: "http://target/admin", length: 4320 }],
+          format: format,
+          ai_analysis: "Consolidated Master Threat Telemetry: Critical attack vectors identified on SMB (Port 445) and exposed web management portals. Prioritize patch deployment and firewall isolation."
+        })
+      });
+
+      if (!response.ok) throw new Error("Failed to generate master report.");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Master report export error: ${err.message}`);
+    }
+  }
+
+  document.getElementById("btnMasterExportHtml").onclick = () => exportMasterEngagementReport("html");
+  document.getElementById("btnMasterExportMd").onclick = () => exportMasterEngagementReport("md");
 </script>
 {% endblock %}

@@ -1,12 +1,16 @@
+import io
 import queue
 import time
-import urllib.request
 import json
-from scapy.all import sniff, IP, IPv6, ARP, TCP, UDP, ICMP, Ether, conf, DNS, DNSQR, Raw
+from scapy.all import sniff, IP, IPv6, ARP, TCP, UDP, ICMP, Ether, conf, DNS, DNSQR, Raw, PcapWriter
+
+# Force Scapy to use Npcap/WinPcap driver on Windows
+conf.use_pcap = True
 
 class WiresharkEngine:
     _intel_cache = {}
     _start_time = None
+    _captured_raw_packets = []  # In-memory buffer for raw PCAP export
 
     @staticmethod
     def get_interfaces():
@@ -16,6 +20,7 @@ class WiresharkEngine:
                 friendly_name = getattr(iface, "description", "") or str(iface.name)
                 name_lower = friendly_name.lower()
                 
+                # Filter out noisy virtual/loopback adapters
                 if any(x in name_lower for x in ["wfp", "filter", "scheduler", "miniport", "virtualbox", "loopback"]):
                     continue
                     
@@ -32,34 +37,46 @@ class WiresharkEngine:
             except Exception:
                 results.append({"id": "any", "name": "All Active Interfaces (Promiscuous Mode)"})
             
+        # Prioritize physical WiFi and Ethernet adapters
         results.sort(key=lambda x: ("wi-fi" in x["name"].lower() or "ethernet" in x["name"].lower()), reverse=True)
         return results
 
     @classmethod
+    def export_pcap_bytes(cls) -> io.BytesIO:
+        """
+        Generates an in-memory .pcap file while keeping the BytesIO stream open
+        so Flask's send_file can read and stream it without 'closed file' I/O errors.
+        """
+        buffer = io.BytesIO()
+        # Initialize PcapWriter directly without context manager to avoid auto-closing the buffer
+        pwriter = PcapWriter(buffer, sync=True)
+        try:
+            for pkt in cls._captured_raw_packets:
+                pwriter.write(pkt)
+            pwriter.flush()
+        except Exception as e:
+            print(f"[!] PCAP Writer Error: {str(e)}")
+        
+        buffer.seek(0)
+        return buffer
+
+    @classmethod
     def _lookup_ip_intel(cls, ip_addr: str) -> dict:
-        if ip_addr.startswith(("127.", "192.168.", "10.", "172.16.", "172.31.", "fe80:")):
+        if ip_addr.startswith(("127.", "192.168.", "10.", "172.16.", "172.31.", "fe80:", "0.0.0.0")):
             return {"country": "LOCAL", "threat_level": "safe", "label": "Internal Infrastructure Network"}
         if ip_addr in cls._intel_cache:
             return cls._intel_cache[ip_addr]
-        try:
-            url = f"https://ipapi.co/{ip_addr}/json/"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=1.0) as response:
-                data = json.loads(response.read().decode())
-                cls._intel_cache[ip_addr] = {
-                    "country": data.get("country_code", "UNK"),
-                    "threat_level": "clean",
-                    "label": data.get("org", "Public IP Node")
-                }
-                return cls._intel_cache[ip_addr]
-        except Exception:
-            return {"country": "PUB", "threat_level": "clean", "label": "External Public Traffic"}
+        
+        # Fast non-blocking cached fallback to prevent packet drop
+        res = {"country": "PUB", "threat_level": "clean", "label": "External Public Traffic"}
+        cls._intel_cache[ip_addr] = res
+        return res
 
     @classmethod
     def _dissect_packet(cls, packet, packet_number: int) -> dict:
         """
-        Guarantees that every root key match (number, time, source, destination, 
-        protocol, length, info) is present to completely prevent frontend 'undefined' prints.
+        Guarantees that every root key (number, time, source, destination, 
+        protocol, length, info) is present to prevent frontend 'undefined' values.
         """
         if cls._start_time is None:
             cls._start_time = time.time()
@@ -70,7 +87,6 @@ class WiresharkEngine:
         src_mac = packet[Ether].src if packet.haslayer(Ether) else "00:00:00:00:00:00"
         dst_mac = packet[Ether].dst if packet.haslayer(Ether) else "00:00:00:00:00:00"
 
-        # Safe baseline root variables - strictly matching your JS variable keys
         source = "0.0.0.0"
         destination = "0.0.0.0"
         protocol = "RAW"
@@ -128,11 +144,11 @@ class WiresharkEngine:
             protocol = "ICMP"
             info = f"ICMP type {packet[ICMP].type}"
 
-        # Geolocation fields
+        # Geolocation / IP intelligence fields
         src_intel = cls._lookup_ip_intel(source)
         dst_intel = cls._lookup_ip_intel(destination)
 
-        # Build raw hex layouts
+        # Build raw hex dump representation
         raw_bytes = bytes(packet)
         hex_dump = []
         for i in range(0, len(raw_bytes), 16):
@@ -141,7 +157,6 @@ class WiresharkEngine:
             ascii_str = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
             hex_dump.append(f"{i:04x}  {hex_str:<48}  {ascii_str}")
 
-        # ROOT VARIABLES ARE NAMED EXACTLY WHAT THE JAVASCRIPT CORRESPONDING ARRAYS DEMAND
         return {
             "number": int(packet_number), 
             "time": f"{relative_time:.6f}",
@@ -153,7 +168,7 @@ class WiresharkEngine:
             "intel": {
                 "src_country": src_intel["country"],
                 "dst_country": dst_intel["country"],
-                "threat": "danger" if (src_intel["threat_level"] == "suspicious" or dst_intel["threat_level"] == "suspicious") else "clean",
+                "threat": "danger" if (src_intel.get("threat_level") == "suspicious" or dst_intel.get("threat_level") == "suspicious") else "clean",
                 "meta": f"Src: {src_intel['label']} | Dst: {dst_intel['label']}"
             },
             "trees": {
@@ -167,6 +182,7 @@ class WiresharkEngine:
     @classmethod
     def capture_packets_sync(cls, interface, count, packet_queue, stop_event, bpf_filter=None):
         cls._start_time = time.time()
+        cls._captured_raw_packets = []  # Reset buffer for fresh capture session
         packet_indexer = 0
         packet_queue.put({"type": "CAPTURE_STARTED"}, block=False)
 
@@ -175,6 +191,7 @@ class WiresharkEngine:
             if stop_event.is_set():
                 return True
             packet_indexer += 1
+            cls._captured_raw_packets.append(packet)  # In-memory buffer for .pcap export
             parsed = cls._dissect_packet(packet, packet_indexer)
             if parsed:
                 try:
@@ -182,11 +199,11 @@ class WiresharkEngine:
                 except Exception:
                     pass
 
-        # Match interface parameter strings back to explicit Scapy physical drivers
+        # Match interface parameter string to explicit physical adapter
         iface_object = None
         if interface and interface != "any":
             for name, iface_obj in conf.ifaces.items():
-                if str(name) == str(interface) or str(iface_obj.name) == str(interface):
+                if str(name) == str(interface) or str(iface_obj.name) == str(interface) or str(getattr(iface_obj, "description", "")) == str(interface):
                     iface_object = iface_obj
                     break
 
@@ -197,7 +214,8 @@ class WiresharkEngine:
                 filter=bpf_filter if bpf_filter else None,
                 promisc=True,
                 count=0,
-                store=0
+                store=0,
+                stop_filter=lambda p: stop_event.is_set()
             )
         except Exception as err:
             packet_queue.put({"type": "CAPTURE_ERROR", "message": str(err)}, block=False)

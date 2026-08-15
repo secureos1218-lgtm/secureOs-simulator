@@ -12,6 +12,20 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 14px 18px; border-bottom: 1px solid var(--border); text-align: left; }
   th { background: #070f1a; color: #b9c9dd; }
+
+  /* Export Action Bar */
+  .export-actions { display: flex; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed #22374e; align-items: center; }
+  .btn-export { padding: 8px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s ease; }
+  .btn-html { background: #0f766e; color: #fff; border-color: #14b8a6; }
+  .btn-html:hover:not(:disabled) { background: #115e59; }
+  .btn-md { background: #1e3a5f; color: #fff; border-color: #3b82f6; }
+  .btn-md:hover:not(:disabled) { background: #254a78; }
+  .btn-export:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* JARVIS Explanation Box Styling */
+  .jarvis-panel { margin-top: 18px; padding: 22px; }
+  .jarvis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .jarvis-output { background: #06101b; padding: 18px; border-radius: 6px; border: 1px solid var(--border); font-size: 14px; line-height: 1.6; min-height: 90px; color: #d0e1f9; white-space: pre-wrap; }
 </style>
 {% endblock %}
 
@@ -38,15 +52,32 @@
     </div>
     <button class="btn primary" id="startBtn">▶ Run Nuclei</button>
   </div>
+
+  <div class="export-actions">
+    <span style="font-size: 13px; font-weight: 600; color: #828997;">📊 Export Vulnerability Audit:</span>
+    <button class="btn-export btn-html" id="btnExportNucleiHtml" disabled>📄 Export HTML (Print/PDF)</button>
+    <button class="btn-export btn-md" id="btnExportNucleiMd" disabled>📝 Export Markdown (.md)</button>
+  </div>
 </section>
 
 <section class="panel">
-  <div class="panel-heading">Identified Vulnerabilities</div>
+  <div class="panel-heading" style="padding: 17px 20px; border-bottom: 1px solid var(--border); font-weight: 700;">Identified Vulnerabilities</div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Template ID</th><th>Name</th><th>Severity</th><th>Matched At</th></tr></thead>
       <tbody id="nucleiResults"></tbody>
     </table>
+  </div>
+</section>
+
+<!-- DEDICATED INLINE JARVIS AI EXPLANATION BOX -->
+<section class="panel jarvis-panel">
+  <div class="jarvis-header">
+    <h3 style="margin: 0; color: var(--cyan); font-size: 18px;">🤖 JARVIS Vulnerability Remediation Guide</h3>
+    <button class="btn primary" id="explainNucleiBtn">Explain Findings with JARVIS</button>
+  </div>
+  <div class="jarvis-output" id="jarvisNucleiBox">
+Click "Explain Findings with JARVIS" after running an audit to generate plain-English risk assessments, CVSS calculations, and exact step-by-step CLI remediation rules.
   </div>
 </section>
 {% endblock %}
@@ -58,18 +89,31 @@
   const targetInput = document.getElementById("target");
   const severitySelect = document.getElementById("severity");
   const nucleiResults = document.getElementById("nucleiResults");
+  const explainNucleiBtn = document.getElementById("explainNucleiBtn");
+  const jarvisNucleiBox = document.getElementById("jarvisNucleiBox");
+  const btnExportNucleiHtml = document.getElementById("btnExportNucleiHtml");
+  const btnExportNucleiMd = document.getElementById("btnExportNucleiMd");
 
-  const ws = new WebSocket(`ws://${window.location.host}/ws/nuclei`);
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/nuclei`);
+  let nucleiFindings = [];
+  let activeAiAnalysis = "";
 
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "NUCLEI_FINDING") {
       const d = msg.data;
+      nucleFindings.push(d);
+      
       const row = document.createElement("tr");
-      row.innerHTML = `<td><strong>${d.template_id}</strong></td><td>${d.name}</td><td><span class="badge">${d.severity}</span></td><td>${d.matched_at}</td>`;
+      row.innerHTML = `<td><strong>${d.template_id || d.id || 'CVE-UNKNOWN'}</strong></td><td>${d.name}</td><td><span class="badge">${d.severity}</span></td><td>${d.matched_at || d.matched || targetInput.value}</td>`;
       nucleiResults.appendChild(row);
     } else if (msg.type === "NUCLEI_COMPLETE") {
       startBtn.disabled = false;
+      if (nucleiFindings.length > 0) {
+        btnExportNucleiHtml.disabled = false;
+        btnExportNucleiMd.disabled = false;
+      }
     }
   };
 
@@ -77,8 +121,95 @@
     const target = targetInput.value.trim();
     if (!target) return;
     nucleiResults.replaceChildren();
+    nucleiFindings = [];
+    activeAiAnalysis = "";
     startBtn.disabled = true;
+    btnExportNucleiHtml.disabled = true;
+    btnExportNucleiMd.disabled = true;
+    jarvisNucleiBox.textContent = "Click \"Explain Findings with JARVIS\" after audit completion...";
     ws.send(JSON.stringify({ action: "RUN_NUCLEI", target: target, severity: severitySelect.value }));
   };
+
+  explainNucleiBtn.onclick = async () => {
+    if (!nucleiFindings.length) {
+      jarvisNucleiBox.textContent = "[!] No vulnerabilities discovered yet. Run the Nuclei audit first!";
+      return;
+    }
+
+    jarvisNucleiBox.textContent = "Generating threat remediation plan with JARVIS AI...";
+    activeAiAnalysis = "";
+
+    try {
+      const response = await fetch("/api/jarvis/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "Analyze these Nuclei DAST vulnerability findings. Provide an executive summary of risks, assign CVSS scores, and list exact step-by-step remediation commands and patch code.",
+          telemetry: { findings: nucleiFindings }
+        })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      jarvisNucleiBox.textContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const rawData = line.replace("data: ", "").trim();
+            if (rawData === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(rawData);
+              jarvisNucleiBox.textContent += parsed.token;
+              activeAiAnalysis += parsed.token;
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (err) {
+      jarvisNucleiBox.textContent = "[!] Connection error to JARVIS engine runtime.";
+    }
+  };
+
+  async function exportNucleiReport(format) {
+    const target = targetInput.value.trim() || "http://target.local";
+    const filename = `Nuclei_Vulnerability_Report_${target.replace(/[\/\\:]/g, "_")}.${format === "html" ? "html" : "md"}`;
+
+    try {
+      const response = await fetch("/api/reports/export-universal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: target,
+          nuclei_data: nucleiFindings,
+          format: format,
+          ai_analysis: activeAiAnalysis || "Automated template vulnerability assessment completed via Nuclei."
+        })
+      });
+
+      if (!response.ok) throw new Error("Report generation failed.");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Export error: ${err.message}`);
+    }
+  }
+
+  btnExportNucleiHtml.onclick = () => exportNucleiReport("html");
+  btnExportNucleiMd.onclick = () => exportNucleiReport("md");
 </script>
 {% endblock %}

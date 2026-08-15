@@ -5,6 +5,10 @@ import aiohttp
 class FfufEngine:
     @staticmethod
     async def execute_fuzz_stream(target, wordlist_path=None, concurrency=50):
+        """
+        High-Performance Async Web Fuzzer Engine:
+        Executes parallel directory, parameter, and extension brute-forcing via aiohttp.
+        """
         # Format target URL
         if not target.startswith("http://") and not target.startswith("https://"):
             target = "http://" + target
@@ -25,20 +29,23 @@ class FfufEngine:
             words = [
                 "admin", "login", "api", "dashboard", "config", ".env", "backup",
                 "robots.txt", "uploads", "images", "assets", "static", "user",
-                "v1", "v2", "db", "database", "steg", "wireshark", "fuzzer", "nuclei"
+                "v1", "v2", "db", "database", "steg", "wireshark", "fuzzer", "nuclei",
+                "swagger", "metrics", "actuator", "console", "phpinfo"
             ]
 
-        yield {"type": "TERMINAL_LINE", "text": f"[*] Launching aiohttp async engine against {target} ({len(words)} payloads, max {concurrency} workers)...\n"}
+        # Multi-extension probing matrix
+        extensions = ["", ".php", ".json", ".bak", ".env", ".log"]
+
+        yield {"type": "TERMINAL_LINE", "text": f"[*] Launching aiohttp engine against {target} ({len(words)} base payloads with {len(extensions)} extension permutations)...\n"}
 
         semaphore = asyncio.Semaphore(concurrency)
         timeout = aiohttp.ClientTimeout(total=4)
-        
-        # Configure connector to disable SSL verification for security testing
         connector = aiohttp.TCPConnector(ssl=False, limit=concurrency)
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            async def test_word(word):
-                url = target.replace("FUZZ", word)
+            async def test_word_ext(word, ext):
+                payload_word = f"{word}{ext}"
+                url = target.replace("FUZZ", payload_word)
                 async with semaphore:
                     try:
                         async with session.get(url, allow_redirects=False) as response:
@@ -55,7 +62,12 @@ class FfufEngine:
                         pass
                     return None
 
-            tasks = [asyncio.create_task(test_word(w)) for w in words]
+            # Build matrix of tasks across words and extensions
+            tasks = [
+                asyncio.create_task(test_word_ext(w, ext))
+                for w in words
+                for ext in extensions
+            ]
             
             for task in asyncio.as_completed(tasks):
                 match = await task
@@ -65,5 +77,5 @@ class FfufEngine:
                         "data": match
                     }
 
-        yield {"type": "TERMINAL_LINE", "text": "[+] High-speed fuzzing cycle completed.\n"}
+        yield {"type": "TERMINAL_LINE", "text": "[+] High-speed multi-extension fuzzing cycle completed.\n"}
         yield {"type": "FUZZ_COMPLETE", "payload": {"status": "success"}}

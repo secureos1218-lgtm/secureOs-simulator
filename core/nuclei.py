@@ -3,28 +3,39 @@ import aiohttp
 
 class NucleiEngine:
     @staticmethod
-    async def execute_nuclei_stream(target, severity=None, concurrency=20):
+    async def execute_nuclei_stream(target, severity=None, concurrency=25):
+        """
+        High-Speed Vulnerability Scanner Engine:
+        Executes parallel security checks across Web, Cloud, Docker, and API endpoints.
+        """
         if not target.startswith("http://") and not target.startswith("https://"):
             target = "http://" + target
         target = target.rstrip("/")
 
         vulnerability_checks = [
+            # High / Critical Leaks
             {"id": "git-head-leak", "name": "Exposed Git Repository", "path": "/.git/HEAD", "severity": "high", "match": "ref: refs/"},
             {"id": "env-file-disclosure", "name": "Exposed Environment File (.env)", "path": "/.env", "severity": "critical", "match": ["DB_", "SECRET", "PASSWORD", "KEY="]},
             {"id": "wordpress-config-leak", "name": "Exposed WordPress Config Backup", "path": "/wp-config.php.bak", "severity": "critical", "match": "DB_PASSWORD"},
+            {"id": "exposed-docker-daemon", "name": "Exposed Docker Engine API", "path": "/version", "severity": "critical", "match": "ApiVersion"},
+            {"id": "spring-actuator-heapdump", "name": "Exposed Spring Boot Memory Heapdump", "path": "/actuator/heapdump", "severity": "critical", "match": "JAVA PROFILE"},
+            
+            # API & System Diagnoses
             {"id": "phpinfo-disclosure", "name": "Exposed PHPInfo Diagnostic Page", "path": "/phpinfo.php", "severity": "medium", "match": "PHP Version"},
             {"id": "swagger-api-docs", "name": "Exposed Swagger API Documentation", "path": "/swagger-ui.html", "severity": "info", "match": "swagger"},
-            {"id": "spring-boot-actuator", "name": "Exposed Spring Boot Actuator Endpoint", "path": "/actuator/env", "severity": "high", "match": "activeProfiles"}
+            {"id": "spring-boot-actuator", "name": "Exposed Spring Boot Actuator Endpoint", "path": "/actuator/env", "severity": "high", "match": "activeProfiles"},
+            {"id": "s3-bucket-directory", "name": "Exposed Amazon S3 Bucket Directory", "path": "/?format=xml", "severity": "medium", "match": "ListBucketResult"},
+            {"id": "graphql-introspection", "name": "GraphQL Introspection Endpoint Enabled", "path": "/graphql", "severity": "low", "match": "__schema"}
         ]
 
-        yield {"type": "TERMINAL_LINE", "text": f"[*] Starting aiohttp vulnerability assessment against {target}...\n"}
+        yield {"type": "TERMINAL_LINE", "text": f"[*] Starting parallel vulnerability checks against {target}...\n"}
 
         semaphore = asyncio.Semaphore(concurrency)
         timeout = aiohttp.ClientTimeout(total=4)
         connector = aiohttp.TCPConnector(ssl=False, limit=concurrency)
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            # 1. Test Base Security Headers
+            # 1. Base Security Headers Inspection
             try:
                 async with session.get(target) as res:
                     headers = res.headers
@@ -48,10 +59,20 @@ class NucleiEngine:
                                 "matched_at": target
                             }
                         }
+                    if headers.get("Access-Control-Allow-Origin") == "*":
+                        yield {
+                            "type": "NUCLEI_FINDING",
+                            "data": {
+                                "template_id": "cors-wildcard-origin",
+                                "name": "Overly Permissive CORS (Wildcard Origin)",
+                                "severity": "medium",
+                                "matched_at": target
+                            }
+                        }
             except Exception:
                 pass
 
-            # 2. Async Endpoint Vulnerability Checks
+            # 2. Async Endpoint Probes
             async def run_check(check):
                 if severity and severity not in check["severity"]:
                     return None

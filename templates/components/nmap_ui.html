@@ -19,7 +19,17 @@
   select option { background: #0a1727; }
   .hint { display: block; margin-top: 8px; font-size: 12px; }
 
-  .actions { display: flex; gap: 10px; padding-bottom: 20px; }
+  .actions { display: flex; gap: 10px; padding-bottom: 20px; flex-wrap: wrap; }
+  .export-actions { display: flex; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed #22374e; }
+  
+  .btn-export {
+    padding: 8px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s ease;
+  }
+  .btn-html { background: #0f766e; color: #fff; border-color: #14b8a6; }
+  .btn-html:hover:not(:disabled) { background: #115e59; }
+  .btn-md { background: #1e3a5f; color: #fff; border-color: #3b82f6; }
+  .btn-md:hover:not(:disabled) { background: #254a78; }
+  .btn-export:disabled { opacity: 0.35; cursor: not-allowed; }
 
   .progress-row { display: grid; grid-template-columns: auto 1fr 100px; gap: 20px; align-items: center; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--border); }
   .progress-track { overflow: hidden; height: 18px; border: 1px solid #29415e; border-radius: 10px; background: #07121f; }
@@ -38,8 +48,10 @@
 
   .badge { display: inline-block; padding: 3px 10px; border: 1px solid rgba(57, 220, 114, 0.45); border-radius: 5px; color: var(--green); background: rgba(57, 220, 114, 0.1); }
   .badge.closed { border-color: #354b67; color: #a8b7ca; background: #15243a; }
-  .table-footer { padding: 20px; font-size: 12px; color: var(--muted); }
+  .badge.critical, .badge.high { border-color: rgba(255, 107, 122, 0.6); color: #ff6b7a; background: rgba(255, 107, 122, 0.15); }
+  .badge.medium { border-color: rgba(245, 158, 11, 0.6); color: #f59e0b; background: rgba(245, 158, 11, 0.15); }
 
+  .table-footer { padding: 20px; font-size: 12px; color: var(--muted); }
   .terminal { height: 500px; overflow: auto; padding: 20px; color: #d9e2ee; background: #06101b; font: 12px/1.55 "Cascadia Code", monospace; white-space: pre-wrap; }
 </style>
 {% endblock %}
@@ -80,6 +92,19 @@
     </div>
   </div>
 
+  <!-- VAPT REPORT EXPORT TRIGGER BAR -->
+  <div class="export-actions">
+    <span style="font-size: 13px; font-weight: 600; color: #828997; display: flex; align-items: center;">
+      📊 Export VAPT Audit:
+    </span>
+    <button class="btn-export btn-html" id="btnExportHtml" disabled>
+      📄 Export HTML (Print/PDF)
+    </button>
+    <button class="btn-export btn-md" id="btnExportMd" disabled>
+      📝 Export Markdown (.md)
+    </button>
+  </div>
+
   <div class="progress-row">
     <span>Scan Progress</span>
     <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
@@ -104,6 +129,17 @@
     <div class="terminal" id="terminal">Ready. Configure an authorized target and start a scan.</div>
   </section>
 </div>
+
+<!-- DEDICATED INLINE JARVIS AI EXPLANATION BOX -->
+<section class="panel" style="margin-top: 18px; padding: 22px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+    <h3 style="margin: 0; color: var(--cyan); font-size: 18px;">🤖 JARVIS Threat Explanation</h3>
+    <button class="btn primary" id="explainScanBtn">Explain Findings with JARVIS</button>
+  </div>
+  <div id="jarvisExplanationBox" style="background: #06101b; padding: 18px; border-radius: 6px; border: 1px solid var(--border); font-size: 14px; line-height: 1.6; min-height: 90px; color: #d0e1f9; white-space: pre-wrap;">
+Click "Explain Findings with JARVIS" after a scan finishes to receive a plain-English risk breakdown, attack vectors, and copy-paste CLI remediation rules.
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -120,9 +156,51 @@
   const profile = document.getElementById("profile");
   const ports = document.getElementById("ports");
   const targetInput = document.getElementById("target");
+  const explainScanBtn = document.getElementById("explainScanBtn");
+  const jarvisExplanationBox = document.getElementById("jarvisExplanationBox");
 
-  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/nmap`);
+  const btnExportHtml = document.getElementById("btnExportHtml");
+  const btnExportMd = document.getElementById("btnExportMd");
+
+  let ws = null;
+  let lastCompletedScanPayload = null;
+  let activeAiAnalysisText = "";
+
+  function initWebSocket() {
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/nmap`);
+
+    ws.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+      if (data.type === "TERMINAL_LINE") {
+        if (terminal.textContent.startsWith("Ready") || terminal.textContent.startsWith("Starting")) terminal.textContent = "";
+        terminal.textContent += data.text;
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+      if (data.type === "PROGRESS_UPDATE") setStatus(data.label, data.percent);
+      if (data.type === "SCAN_COMPLETE") {
+        setScanning(false);
+        if (data.payload && data.payload.status === "success") {
+          lastCompletedScanPayload = data.payload;
+          renderResults(data.payload);
+          setStatus("Complete", 100);
+          
+          // Enable Report Exports
+          btnExportHtml.disabled = false;
+          btnExportMd.disabled = false;
+        } else {
+          progressBar.style.width = "0%";
+          progressValue.textContent = "Finished / Stopped";
+        }
+      }
+    };
+
+    ws.onclose = function() {
+      setTimeout(initWebSocket, 2000);
+    };
+  }
+
+  initWebSocket();
 
   function setStatus(label, percent) {
     progressBar.style.width = `${percent}%`;
@@ -146,7 +224,13 @@
       const stateCell = document.createElement("td");
       const badge = document.createElement("span");
       const stateUpper = String(item.state).toUpperCase();
-      badge.className = `badge ${stateUpper === "OPEN" ? "" : "closed"}`;
+      
+      let extraClass = "";
+      if (stateUpper === "CRITICAL" || stateUpper === "HIGH") extraClass = "critical";
+      else if (stateUpper === "MEDIUM") extraClass = "medium";
+      else if (stateUpper !== "OPEN") extraClass = "closed";
+
+      badge.className = `badge ${extraClass}`;
       badge.textContent = stateUpper.toLowerCase();
       stateCell.appendChild(badge);
       row.appendChild(stateCell);
@@ -162,28 +246,8 @@
       row.appendChild(versionCell);
       resultsBody.appendChild(row);
     });
-    resultCount.textContent = discoveredPorts.length ? `Showing ${discoveredPorts.length} ports.` : "No ports discovered";
+    resultCount.textContent = discoveredPorts.length ? `Showing ${discoveredPorts.length} findings.` : "No open ports or vulnerabilities discovered";
   }
-
-  ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    if (data.type === "TERMINAL_LINE") {
-      if (terminal.textContent.startsWith("Ready") || terminal.textContent.startsWith("Starting")) terminal.textContent = "";
-      terminal.textContent += data.text;
-      terminal.scrollTop = terminal.scrollHeight;
-    }
-    if (data.type === "PROGRESS_UPDATE") setStatus(data.label, data.percent);
-    if (data.type === "SCAN_COMPLETE") {
-      setScanning(false);
-      if (data.payload && data.payload.status === "success") {
-        renderResults(data.payload);
-        setStatus("Complete", 100);
-      } else {
-        progressBar.style.width = "0%";
-        progressValue.textContent = "Finished / Stopped";
-      }
-    }
-  };
 
   function setScanning(scanning) {
     startButton.disabled = scanning;
@@ -199,8 +263,17 @@
   startButton.addEventListener("click", () => {
     const target = targetInput.value.trim();
     if (!target) return;
+    
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      terminal.textContent += "\n[!] WebSocket connection not ready. Retrying...\n";
+      return;
+    }
+
     setScanning(true);
     setStatus("Starting", 10);
+    activeAiAnalysisText = "";
+    btnExportHtml.disabled = true;
+    btnExportMd.disabled = true;
     
     ws.send(JSON.stringify({ 
       "action": "RUN_NMAP", 
@@ -224,6 +297,100 @@
     setStatus("Ready", 0);
     resultsBody.replaceChildren();
     terminal.textContent = "Ready.";
+    jarvisExplanationBox.textContent = "Click \"Explain Findings with JARVIS\" after a scan finishes...";
+    lastCompletedScanPayload = null;
+    activeAiAnalysisText = "";
+    btnExportHtml.disabled = true;
+    btnExportMd.disabled = true;
   });
+
+  // Handler to stream JARVIS explanation for scan results
+  explainScanBtn.addEventListener("click", async () => {
+    if (!lastCompletedScanPayload) {
+      jarvisExplanationBox.textContent = "[!] Please run a scan first to generate telemetry for JARVIS to analyze.";
+      return;
+    }
+
+    jarvisExplanationBox.textContent = "Analyzing Nmap scan telemetry with JARVIS AI...";
+    activeAiAnalysisText = "";
+
+    try {
+      const response = await fetch("/api/jarvis/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "Analyze this Nmap scan telemetry. Provide a human-understandable summary of open ports, potential security risks, and exact CLI remediation steps.",
+          telemetry: lastCompletedScanPayload
+        })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      jarvisExplanationBox.textContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const rawData = line.replace("data: ", "").trim();
+            if (rawData === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(rawData);
+              jarvisExplanationBox.textContent += parsed.token;
+              activeAiAnalysisText += parsed.token;
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (err) {
+      jarvisExplanationBox.textContent = "[!] Error connecting to JARVIS engine runtime.";
+    }
+  });
+
+  // Report Export Client-Side Handler
+  async function downloadVaptReport(format) {
+    if (!lastCompletedScanPayload) {
+      alert("No completed scan available to export.");
+      return;
+    }
+
+    const endpoint = format === "html" ? "/api/reports/export-html" : "/api/reports/export-markdown";
+    const targetHost = lastCompletedScanPayload.target || targetInput.value.trim() || "127.0.0.1";
+    const defaultFilename = `VAPT_Report_${targetHost.replace(/[\/\\:]/g, "_")}.${format === "html" ? "html" : "md"}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: targetHost,
+          scan_data: { ports: lastCompletedScanPayload.ports || [] },
+          ai_analysis: activeAiAnalysisText || "Standard automated port discovery completed."
+        })
+      });
+
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = defaultFilename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      alert(`Report download error: ${err.message}`);
+    }
+  }
+
+  btnExportHtml.addEventListener("click", () => downloadVaptReport("html"));
+  btnExportMd.addEventListener("click", () => downloadVaptReport("md"));
 </script>
 {% endblock %}

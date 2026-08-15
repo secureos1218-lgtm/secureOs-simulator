@@ -1,14 +1,25 @@
-﻿# Virtual Environment
-venv/
-ENV/
-env/
-
-# Sensitive Firebase Keys
-firebase_key.json
-
-# Local Vector Database (Optional to ignore if heavy, or keep if small)
-cyber_kb/
-
-# Python Bytecode
+﻿# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Sensitive Keys & Credentials
+firebase_key.json
+*.key
+*.pem
+
+# Local Vector Database & Capture Caches
+cyber_kb/
+*.pcap
+*.cap
+
+# OS Generated Files
+.DS_Store
+Thumbs.db

@@ -6,70 +6,122 @@
 {% block extra_head %}
 <style>
   :root {
-    --ws-bg: #1e1e1e; --ws-panel: #252526; --ws-border: #3c3c3c;
-    --ws-text: #e1e1e1; --ws-blue: #007acc; --ws-danger: #a61c1c;
-    --ws-green: #39dc72;
+    --ws-bg: #14171c;
+    --ws-panel: #1d2127;
+    --ws-border: #2c313a;
+    --ws-text: #abb2bf;
+    --ws-blue: #61afef;
+    --ws-danger: #e06c75;
+    --ws-green: #98c379;
+    --ws-yellow: #e5c07b;
+    --ws-purple: #c678dd;
+    --ws-cyan: #56b6c2;
   }
 
-  /* Override default main padding for Wireshark layout workspace */
   main { padding: 0 !important; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .workspace { flex: 1; display: flex; flex-direction: column; height: 100vh; background: var(--ws-bg); color: var(--ws-text); position: relative; overflow: hidden; }
 
-  .workspace { flex: 1; display: flex; flex-direction: column; height: 100vh; }
+  /* 1. Header Toolbar */
+  .capture-box { padding: 10px 18px; background: var(--ws-panel); border-bottom: 1px solid var(--ws-border); flex-shrink: 0; }
+  .iface-list { background: #14171c; border: 1px solid var(--ws-border); border-radius: 6px; padding: 4px; display: flex; flex-direction: column; gap: 4px; max-height: 90px; overflow-y: auto; }
+  .iface-row { padding: 4px 10px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; background: #1d2127; height: 30px; border: 1px solid #282c34; border-radius: 4px; cursor: pointer; transition: all 0.15s ease; }
+  .iface-row:hover { background: #282c34; }
+  .iface-row.selected { background: #1e3a5f !important; color: #fff !important; border-color: var(--ws-blue); }
 
-  .capture-box { padding: 15px; background: var(--ws-panel); border-bottom: 1px solid var(--ws-border); }
-  .iface-list { background: #1e1e1e; border: 1px solid var(--ws-border); border-radius: 4px; padding: 5px; display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
-  .iface-row { padding: 6px 15px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; background: #252526; height: 42px; border: 1px solid #333; border-radius: 4px; cursor: pointer; }
-  .iface-row:hover { background: #2d2d2d; }
-  .iface-row.selected { background: var(--ws-blue) !important; color: #fff !important; border-color: var(--ws-blue); }
-
-  .filter-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-  .filter-input { flex: 1; background: #1e1e1e; border: 1px solid var(--ws-border); color: #e1e1e1; padding: 7px 10px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
-  .filter-input::placeholder { color: #666; }
+  .filter-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  .filter-input { flex: 1; background: #14171c; border: 1px solid var(--ws-border); color: #e1e1e1; padding: 6px 12px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
+  .filter-input:focus { outline: none; border-color: var(--ws-blue); }
   .filter-input.invalid { border-color: var(--ws-danger); }
 
-  .actions { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
-  .ws-btn { height: 32px; padding: 0 16px; background: #333; color: #fff; border: 1px solid var(--ws-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s ease; }
-  .ws-btn:disabled { opacity: 0.2; cursor: not-allowed; }
-  .ws-btn.primary { background: var(--ws-blue); border: none; }
-  .ws-btn.stop { background: var(--ws-danger); border: none; }
+  .actions { display: flex; gap: 10px; margin-top: 8px; align-items: center; }
+  .ws-btn { height: 30px; padding: 0 14px; background: #282c34; color: #fff; border: 1px solid var(--ws-border); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s ease; }
+  .ws-btn:hover:not(:disabled) { filter: brightness(1.15); }
+  .ws-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .ws-btn.primary { background: #2563eb; border: none; }
+  .ws-btn.stop { background: #dc2626; border: none; }
+  .ws-btn.pcap { background: #0f766e; border: none; }
+  .ws-btn.jarvis-btn { background: #7c3aed; border: none; }
 
-  .sparkline-wrapper { width: 160px; height: 26px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; }
+  .sparkline-wrapper { width: 130px; height: 24px; background: rgba(0,0,0,0.35); border-radius: 4px; overflow: hidden; display: flex; align-items: center; }
   .sparkline-canvas { width: 100%; height: 100%; display: block; }
-  .throughput-label { font-size: 12px; font-weight: bold; color: var(--ws-green); margin-left: 8px; min-width: 70px; }
+  .throughput-label { font-size: 12px; font-weight: bold; color: var(--ws-green); margin-left: 6px; min-width: 75px; }
 
+  /* 2. Main Workspace Layout */
   .pane-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .pane-list { flex: 1.5; overflow-y: auto; background: #1e1e1e; border-bottom: 3px solid var(--ws-border); }
-  table { width: 100%; border-collapse: collapse; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; table-layout: fixed; }
-  th { background: var(--ws-panel); position: sticky; top: 0; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--ws-border); color: #aaa; z-index: 10; }
-  td { padding: 5px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px dashed #2d2d2d; }
 
-  th:nth-child(1), td:nth-child(1) { width: 60px; }
-  th:nth-child(2), td:nth-child(2) { width: 90px; }
-  th:nth-child(3), td:nth-child(3) { width: 130px; }
-  th:nth-child(4), td:nth-child(4) { width: 130px; }
-  th:nth-child(5), td:nth-child(5) { width: 80px; }
-  th:nth-child(6), td:nth-child(6) { width: 80px; }
-  th:nth-child(7), td:nth-child(7) { width: auto; }
+  /* Top Half: Primary Packet List */
+  .pane-list { flex: 3; min-height: 280px; overflow-y: auto; overflow-x: auto; background: #14171c; border-bottom: 2px solid var(--ws-border); }
+  table.packet-table { width: 100%; border-collapse: collapse; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; table-layout: fixed; }
+  table.packet-table thead { background: var(--ws-panel); position: sticky; top: 0; z-index: 10; }
+  table.packet-table th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--ws-border); color: #828997; font-weight: 600; }
+  table.packet-table td { padding: 5px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid #1e2227; }
+  table.packet-table tbody tr { cursor: pointer; }
+  table.packet-table tbody tr:hover { background: #21252b !important; }
+  table.packet-table tbody tr:nth-child(even) { background: #181b20; }
+  table.packet-table tbody tr.selected-packet { background: #1e3a5f !important; color: #fff !important; }
 
-  tr.selected-packet { background: #004b82 !important; color: #fff; }
-  tr:nth-child(even) { background: #252526; }
+  /* Bottom Half: Split View for Details & Hex */
+  .pane-split { flex: 2; min-height: 140px; display: flex; overflow: hidden; border-bottom: 1px solid var(--ws-border); }
+  .pane-details { flex: 1; overflow-y: auto; background: #14171c; border-right: 1px solid var(--ws-border); padding: 10px 14px; font-size: 12px; }
+  .tree-node { margin-left: 18px; padding: 2px 0; color: #98c379; font-family: "Cascadia Code", monospace; }
+  .tree-header { font-weight: bold; cursor: pointer; color: #e5c07b; margin-top: 4px; font-family: "Cascadia Code", monospace; }
 
-  .pane-details { flex: 1; overflow-y: auto; background: #1e1e1e; border-bottom: 3px solid var(--ws-border); padding: 10px; font-size: 13px; }
-  .tree-node { margin-left: 15px; padding: 2px 0; color: #4ec9b0; font-family: monospace; }
-  .tree-header { font-weight: bold; cursor: pointer; color: #fff; margin-top: 4px; }
+  .pane-bytes { flex: 1; overflow-y: auto; background: #101216; padding: 10px 14px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; color: #56b6c2; white-space: pre; }
 
-  .pane-bytes { flex: 1; overflow-y: auto; background: #181818; padding: 10px; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; color: #9cdcfe; white-space: pre; }
-  .status-bar { height: 24px; background: var(--ws-panel); border-top: 1px solid var(--ws-border); padding: 0 15px; display: flex; align-items: center; gap: 16px; font-size: 11px; color: #999; }
+  /* Protocol Colors */
+  .proto-TCP { color: var(--ws-blue); }
+  .proto-UDP { color: var(--ws-cyan); }
+  .proto-DNS { color: var(--ws-purple); }
+  .proto-HTTP { color: var(--ws-yellow); }
+  .proto-ICMP, .proto-ARP { color: var(--ws-danger); }
+  .proto-IPv4, .proto-IPv6 { color: var(--ws-green); }
 
-  .proto-TCP { color: #569cd6; } .proto-UDP { color: #4ec9b0; } .proto-ICMP { color: #f44747; }
-  .proto-DNS { color: #c586c0; } .proto-HTTP { color: #dcdcaa; } .proto-TLS { color: #ce9178; }
-  
-  .row-spark-container { width: 100px; height: 22px; }
+  /* 3. Collapsible Floating JARVIS Threat Drawer */
+  .jarvis-drawer {
+    position: absolute;
+    bottom: 24px;
+    left: 0;
+    right: 0;
+    background: #0f131a;
+    border-top: 2px solid var(--ws-blue);
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.6);
+    transition: transform 0.25s ease-in-out;
+    z-index: 100;
+    max-height: 220px;
+    display: flex;
+    flex-direction: column;
+  }
+  .jarvis-drawer.collapsed {
+    transform: translateY(calc(100% - 32px));
+  }
+  .jarvis-drawer-header {
+    background: #171c24;
+    padding: 6px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    border-bottom: 1px solid var(--ws-border);
+    user-select: none;
+  }
+  .jarvis-drawer-content {
+    padding: 12px 18px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #abb2bf;
+    white-space: pre-wrap;
+    flex: 1;
+  }
+
+  .status-bar { height: 24px; background: var(--ws-panel); border-top: 1px solid var(--ws-border); padding: 0 14px; display: flex; align-items: center; gap: 16px; font-size: 11px; color: #828997; flex-shrink: 0; }
+  .row-spark-container { width: 90px; height: 20px; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="workspace">
+  <!-- Toolbar Area -->
   <section class="capture-box">
     <div class="iface-list" id="ifaceContainer">Loading network adapters...</div>
 
@@ -81,30 +133,56 @@
     <div class="actions">
       <button class="ws-btn primary" id="btnStart" disabled>▶ Start</button>
       <button class="ws-btn stop" id="btnStop" disabled>■ Stop</button>
+      <button class="ws-btn pcap" id="btnExportPcap">💾 Export .PCAP</button>
       <div class="sparkline-wrapper"><canvas id="throughputSpark" class="sparkline-canvas"></canvas></div>
       <span class="throughput-label" id="throughputLabel">0 B/s</span>
+      <button class="ws-btn jarvis-btn" id="btnExplain" style="margin-left: auto;">🤖 Explain Traffic with JARVIS</button>
     </div>
   </section>
 
+  <!-- Wireshark 3-Pane Structure -->
   <div class="pane-container">
+    <!-- Top Pane: High Visibility Packet Table -->
     <div class="pane-list">
-      <table>
+      <table class="packet-table">
         <thead>
-          <tr><th>No.</th><th>Time</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Length</th><th>Info</th></tr>
+          <tr>
+            <th style="width: 65px;">No.</th>
+            <th style="width: 95px;">Time</th>
+            <th style="width: 200px;">Source</th>
+            <th style="width: 200px;">Destination</th>
+            <th style="width: 85px;">Protocol</th>
+            <th style="width: 75px;">Length</th>
+            <th>Info</th>
+          </tr>
         </thead>
         <tbody id="packetListBody">
-          <tr><td colspan="7" style="text-align:center; color:#666; padding:40px;">Select an interface and hit Start.</td></tr>
+          <tr><td colspan="7" style="text-align:center; color:#5c6370; padding:40px;">Select an adapter and hit Start to sniff live traffic.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <div class="pane-details" id="paneDetails">
-      <div style="color:#666;">No packet selected. Click a row to inspect its fields.</div>
+    <!-- Bottom Pane: Side-by-Side Details & Hex -->
+    <div class="pane-split">
+      <div class="pane-details" id="paneDetails">
+        <div style="color:#5c6370;">No packet selected. Click a row above to inspect its protocol fields.</div>
+      </div>
+      <div class="pane-bytes" id="paneBytes">0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................</div>
     </div>
-
-    <div class="pane-bytes" id="paneBytes">0000  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................</div>
   </div>
 
+  <!-- Collapsible JARVIS Drawer -->
+  <div class="jarvis-drawer collapsed" id="jarvisDrawer">
+    <div class="jarvis-drawer-header" id="jarvisDrawerHeader">
+      <span style="font-weight: 700; color: var(--ws-blue); font-size: 12px;">🤖 JARVIS Threat Intelligence Analysis</span>
+      <span id="jarvisToggleIcon" style="font-size: 11px; color: #828997;">▲ Expand</span>
+    </div>
+    <div class="jarvis-drawer-content" id="jarvisOutput">
+      Click "Explain Traffic with JARVIS" above to trigger automated anomaly detection, identify cleartext credentials, and inspect suspicious protocol behaviors.
+    </div>
+  </div>
+
+  <!-- Status Bar -->
   <div class="status-bar">
     <span id="lblStatus">Status: Idle</span>
     <span id="lblCount">Packets: 0</span>
@@ -119,12 +197,19 @@
   const filterInput = document.getElementById("filterInput");
   const btnStart = document.getElementById("btnStart");
   const btnStop = document.getElementById("btnStop");
+  const btnExportPcap = document.getElementById("btnExportPcap");
+  const btnExplain = document.getElementById("btnExplain");
   const packetListBody = document.getElementById("packetListBody");
   const paneDetails = document.getElementById("paneDetails");
   const paneBytes = document.getElementById("paneBytes");
   const lblStatus = document.getElementById("lblStatus");
   const lblCount = document.getElementById("lblCount");
   const throughputLabel = document.getElementById("throughputLabel");
+
+  const jarvisDrawer = document.getElementById("jarvisDrawer");
+  const jarvisDrawerHeader = document.getElementById("jarvisDrawerHeader");
+  const jarvisToggleIcon = document.getElementById("jarvisToggleIcon");
+  const jarvisOutput = document.getElementById("jarvisOutput");
 
   let selectedIface = null;
   let isFirst = true;
@@ -136,76 +221,22 @@
   let activeIntervals = [];
 
   const MAX_RENDERED_ROWS = 800; 
-  const ws = new WebSocket(`ws://${window.location.host}/ws/wireshark`);
 
-  async function fetchAdapters() {
-    const res = await fetch("/api/wireshark/interfaces");
-    const list = await res.json();
-    ifaceContainer.replaceChildren();
-    activeIntervals.forEach(id => clearInterval(id));
-    activeIntervals = [];
-
-    if (!list.length) {
-      ifaceContainer.textContent = "No interfaces found.";
-      return;
+  // Drawer Toggle Behavior
+  function toggleJarvisDrawer(forceOpen = false) {
+    if (forceOpen) {
+      jarvisDrawer.classList.remove("collapsed");
+      jarvisToggleIcon.textContent = "▼ Minimize";
+    } else {
+      jarvisDrawer.classList.toggle("collapsed");
+      const isCollapsed = jarvisDrawer.classList.contains("collapsed");
+      jarvisToggleIcon.textContent = isCollapsed ? "▲ Expand" : "▼ Minimize";
     }
-
-    list.forEach((iface, idx) => {
-      const r = document.createElement("div");
-      r.className = "iface-row" + (idx === 0 ? " selected" : "");
-      
-      const canvasId = `row_spark_${idx}`;
-      r.innerHTML = `
-        <span style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%;">${escapeHtml(iface.name)}</span>
-        <div class="row-spark-container"><canvas id="${canvasId}" style="width:100%; height:100%;"></canvas></div>
-      `;
-      
-      r.onclick = () => {
-        if (btnStart.textContent === "⚙ Sniffing...") return; 
-        document.querySelectorAll(".iface-row").forEach(row => row.classList.remove("selected"));
-        r.classList.add("selected");
-        selectedIface = iface.id;
-      };
-      
-      ifaceContainer.appendChild(r);
-      if (idx === 0) selectedIface = iface.id;
-
-      const nameLower = iface.name.toLowerCase();
-      const isLive = nameLower.includes("wi-fi") || nameLower.includes("mediatek") || nameLower.includes("ethernet") || nameLower.includes("realtek");
-      initInterfaceRowSparkline(canvasId, isLive);
-    });
-
-    btnStart.disabled = false;
   }
+  jarvisDrawerHeader.onclick = () => toggleJarvisDrawer();
 
-  function initInterfaceRowSparkline(canvasId, isLive) {
-    const cvs = document.getElementById(canvasId); if(!cvs) return;
-    const ctx = cvs.getContext("2d");
-    cvs.width = 100; cvs.height = 22;
-    let history = Array(30).fill(cvs.height - 2);
-
-    const iv = setInterval(() => {
-      history.shift();
-      let next = cvs.height - 2;
-      if(isLive) {
-        next = cvs.height - Math.floor(Math.random() * 3) - 2;
-        if(Math.random() > 0.85) next = Math.floor(Math.random() * (cvs.height * 0.4));
-      }
-      history.push(next);
-
-      ctx.clearRect(0,0,cvs.width,cvs.height);
-      ctx.beginPath();
-      ctx.strokeStyle = isLive ? "#39dc72" : "#555555";
-      ctx.lineWidth = 1.0;
-      history.forEach((y, i) => {
-        if(i === 0) ctx.moveTo(0, y); else ctx.lineTo(i * 100/29, y);
-      });
-      ctx.stroke();
-    }, 120);
-    activeIntervals.push(iv);
-  }
-
-  fetchAdapters();
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/wireshark`);
 
   function escapeHtml(str) {
     const div = document.createElement("div");
@@ -213,18 +244,97 @@
     return div.innerHTML;
   }
 
+  // 1. Adapter Sparklines
+  function initInterfaceRowSparkline(canvasId, isLive) {
+    const cvs = document.getElementById(canvasId);
+    if (!cvs) return;
+    const ctx = cvs.getContext("2d");
+    cvs.width = 90;
+    cvs.height = 20;
+    let history = Array(25).fill(cvs.height - 2);
+
+    const iv = setInterval(() => {
+      history.shift();
+      let next = cvs.height - 2;
+      if (isLive) {
+        next = cvs.height - Math.floor(Math.random() * 4) - 2;
+        if (Math.random() > 0.8) next = Math.floor(Math.random() * (cvs.height * 0.4));
+      }
+      history.push(next);
+
+      ctx.clearRect(0, 0, cvs.width, cvs.height);
+      ctx.beginPath();
+      ctx.strokeStyle = isLive ? "#98c379" : "#4b5263";
+      ctx.lineWidth = 1.2;
+      history.forEach((y, i) => {
+        if (i === 0) ctx.moveTo(0, y);
+        else ctx.lineTo((i * cvs.width) / 24, y);
+      });
+      ctx.stroke();
+    }, 120);
+
+    activeIntervals.push(iv);
+  }
+
+  async function fetchAdapters() {
+    try {
+      const res = await fetch("/api/wireshark/interfaces");
+      const list = await res.json();
+      ifaceContainer.replaceChildren();
+      activeIntervals.forEach(id => clearInterval(id));
+      activeIntervals = [];
+
+      if (!list.length) {
+        ifaceContainer.textContent = "No network interfaces found.";
+        return;
+      }
+
+      list.forEach((iface, idx) => {
+        const r = document.createElement("div");
+        r.className = "iface-row" + (idx === 0 ? " selected" : "");
+        const canvasId = `row_spark_${idx}`;
+        
+        r.innerHTML = `
+          <span style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%;">${escapeHtml(iface.name)}</span>
+          <div class="row-spark-container"><canvas id="${canvasId}" style="width:100%; height:100%;"></canvas></div>
+        `;
+        
+        r.onclick = () => {
+          if (btnStart.textContent === "⚙ Sniffing...") return; 
+          document.querySelectorAll(".iface-row").forEach(row => row.classList.remove("selected"));
+          r.classList.add("selected");
+          selectedIface = iface.id;
+        };
+        
+        ifaceContainer.appendChild(r);
+        if (idx === 0) selectedIface = iface.id;
+
+        const nameLower = iface.name.toLowerCase();
+        const isLive = nameLower.includes("wi-fi") || nameLower.includes("ethernet") || nameLower.includes("realtek") || nameLower.includes("intel") || nameLower.includes("mediatek");
+        initInterfaceRowSparkline(canvasId, isLive);
+      });
+
+      btnStart.disabled = false;
+    } catch (e) {
+      ifaceContainer.textContent = "Failed to load network adapters.";
+    }
+  }
+
+  fetchAdapters();
+
+  // 2. Global Throughput Sparkline
   const sparkCanvas = document.getElementById("throughputSpark");
   const sparkCtx = sparkCanvas.getContext("2d");
-  sparkCanvas.width = 150; sparkCanvas.height = 26;
-  let throughputPoints = Array(45).fill(sparkCanvas.height - 2);
+  sparkCanvas.width = 130;
+  sparkCanvas.height = 24;
+  let throughputPoints = Array(35).fill(sparkCanvas.height - 2);
 
   setInterval(() => {
     const bytesPerSec = bytesSinceLastTick;
     bytesSinceLastTick = 0;
-
     throughputLabel.textContent = formatBytes(bytesPerSec) + "/s";
 
-    const maxScaleBytes = 50000; 
+    const maxScaleBytes = 40000; 
     const normalized = Math.min(bytesPerSec / maxScaleBytes, 1);
     const y = sparkCanvas.height - 2 - normalized * (sparkCanvas.height - 4);
 
@@ -233,11 +343,11 @@
 
     sparkCtx.clearRect(0, 0, sparkCanvas.width, sparkCanvas.height);
     sparkCtx.beginPath();
-    sparkCtx.strokeStyle = "#4ec9b0";
+    sparkCtx.strokeStyle = "#56b6c2";
     sparkCtx.lineWidth = 1.4;
-    sparkCtx.lineJoin = "round";
     throughputPoints.forEach((yp, i) => {
-      if (i === 0) sparkCtx.moveTo(0, yp); else sparkCtx.lineTo(i * 150 / 44, yp);
+      if (i === 0) sparkCtx.moveTo(0, yp);
+      else sparkCtx.lineTo((i * sparkCanvas.width) / 34, yp);
     });
     sparkCtx.stroke();
   }, 1000);
@@ -258,13 +368,13 @@
       btnStart.textContent = "⚙ Sniffing...";
       btnStart.disabled = true;
       btnStop.disabled = false;
-      lblStatus.innerHTML = `<span style="color:#4ec9b0; font-weight:bold;">● LIVE PACKET STREAMING ACTIVE</span>`;
+      lblStatus.innerHTML = `<span style="color:#98c379; font-weight:bold;">● LIVE PACKET STREAM ACTIVE</span>`;
       filterInput.classList.remove("invalid");
     } else if (state === "STOPPING") {
       btnStop.textContent = "■ Stopping...";
       btnStart.disabled = true;
       btnStop.disabled = true;
-      lblStatus.innerHTML = `<span>Flushing system sockets and tearing down hook frames...</span>`;
+      lblStatus.innerHTML = `<span>Flushing capture buffer...</span>`;
     } else if (state === "IDLE") {
       btnStart.textContent = "▶ Start";
       btnStop.textContent = "■ Stop";
@@ -274,15 +384,21 @@
     }
   }
 
+  // 3. Live Packet Rendering
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
+    let msg;
+    try {
+      msg = JSON.parse(e.data);
+    } catch (err) {
+      return;
+    }
 
     if (msg.type === "CAPTURE_STARTED") {
       updateInterfaceState("RUNNING");
     }
     else if (msg.type === "CAPTURE_ERROR") {
       updateInterfaceState("IDLE");
-      lblStatus.innerHTML = `<span style="color:#f44747; font-weight:bold;">Capture Error: ${escapeHtml(msg.message)}</span>`;
+      lblStatus.innerHTML = `<span style="color:#e06c75; font-weight:bold;">Capture Error: ${escapeHtml(msg.message)}</span>`;
       filterInput.classList.add("invalid");
     }
     else if (msg.type === "PACKET_ROW") {
@@ -309,7 +425,10 @@
     flushScheduled = false;
     if (!pendingRows.length) return;
 
-    if (isFirst) { packetListBody.replaceChildren(); isFirst = false; }
+    if (isFirst) {
+      packetListBody.replaceChildren();
+      isFirst = false;
+    }
 
     const frag = document.createDocumentFragment();
     pendingRows.forEach(pkt => {
@@ -323,13 +442,12 @@
 
       const tr = document.createElement("tr");
       tr.className = `proto-${proto}`;
-      tr.dataset.pktNumber = num;
       tr.innerHTML = `
-        <td>${num}</td>
+        <td style="font-weight:600;">${num}</td>
         <td>${timeVal}</td>
         <td>${escapeHtml(src)}</td>
         <td>${escapeHtml(dst)}</td>
-        <td><strong>${escapeHtml(proto)}</strong></td>
+        <td><strong class="proto-${proto}">${escapeHtml(proto)}</strong></td>
         <td>${len}</td>
         <td>${escapeHtml(infoMsg)}</td>
       `;
@@ -365,28 +483,34 @@
         [`Destination Link Addr: ${pkt.trees.ethernet.dst_mac || "00:00:00:00:00:00"}`, `Source Link Addr: ${pkt.trees.ethernet.src_mac || "00:00:00:00:00:00"}`]);
     }
     if (pkt.trees.ip) {
-      createTreeSection(`Internet Protocol Header Metric Fields`,
-        [`Version Identifier: ${pkt.trees.ip.version || "N/A"}`, `Header Segment Depth: ${pkt.trees.ip.ihl || "N/A"}`, `Time to Live Vector: ${pkt.trees.ip.ttl || "N/A"}`]);
+      createTreeSection(`Internet Protocol Header (${pkt.protocol})`,
+        [`Version: ${pkt.trees.ip.version || "N/A"}`, `Header Depth: ${pkt.trees.ip.ihl || "N/A"}`, `TTL: ${pkt.trees.ip.ttl || "N/A"}`]);
     }
     if (pkt.trees.l4) {
-      createTreeSection(`${pkt.protocol} Segment Header Layer Boundaries`, 
-        [`Source Access Port: ${pkt.trees.l4.src_port || "N/A"}`, `Destination Access Port: ${pkt.trees.l4.dst_port || "N/A"}`]);
+      createTreeSection(`${pkt.protocol} Segment Header`, 
+        [`Source Port: ${pkt.trees.l4.src_port || "N/A"}`, `Destination Port: ${pkt.trees.l4.dst_port || "N/A"}`]);
     }
     if (pkt.trees.app) {
       const app = pkt.trees.app;
       if (app.kind === "HTTP") {
-        createTreeSection(`Hypertext Transfer Protocol Application Frame Payload`, app.headers || [app.summary]);
+        createTreeSection(`Hypertext Transfer Protocol (HTTP)`, app.headers || [app.summary]);
       } else if (app.kind === "DNS") {
-        createTreeSection(`Domain Name System Application Frame Payload`, app.is_response ? (app.answers || [app.summary]) : [`Query Line: ${app.query}`]);
-      } else if (app.kind === "TLS") {
-        createTreeSection(`Transport Layer Security Application Layer Payload`, [`Server Name Parameter: ${app.sni}`]);
+        createTreeSection(`Domain Name System (DNS)`, app.is_response ? (app.answers || [app.summary]) : [`Query: ${app.query}`]);
       }
     }
   }
 
   function createTreeSection(headerText, lines) {
-    const h = document.createElement("div"); h.className = "tree-header"; h.textContent = `▼ ${headerText}`; paneDetails.appendChild(h);
-    lines.forEach(text => { const n = document.createElement("div"); n.className = "tree-node"; n.textContent = ` └─ ${text}`; paneDetails.appendChild(n); });
+    const h = document.createElement("div");
+    h.className = "tree-header";
+    h.textContent = `▼ ${headerText}`;
+    paneDetails.appendChild(h);
+    lines.forEach(text => {
+      const n = document.createElement("div");
+      n.className = "tree-node";
+      n.textContent = ` └─ ${text}`;
+      paneDetails.appendChild(n);
+    });
   }
 
   btnStart.onclick = () => {
@@ -406,6 +530,63 @@
   btnStop.onclick = () => {
     updateInterfaceState("STOPPING");
     ws.send(JSON.stringify({ action: "STOP_CAPTURE" }));
+  };
+
+  // PCAP Export Handler
+  btnExportPcap.onclick = () => {
+    if (!packetStore.length) {
+      alert("No packets captured yet. Start sniffing traffic before exporting a PCAP.");
+      return;
+    }
+    window.location.href = "/api/wireshark/export-pcap";
+  };
+
+  // 4. Trigger JARVIS and Auto-Expand Drawer
+  btnExplain.onclick = async () => {
+    if (!packetStore.length) {
+      toggleJarvisDrawer(true);
+      jarvisOutput.textContent = "[!] No packet telemetry captured yet. Start a packet stream first!";
+      return;
+    }
+
+    toggleJarvisDrawer(true);
+    jarvisOutput.textContent = "Analyzing recent captured packet stream with JARVIS AI...";
+
+    try {
+      const response = await fetch("/api/jarvis/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "Analyze these recent captured network packet headers. Detect any anomalous protocols, suspicious traffic spikes, unencrypted credentials, or potential port scan signatures.",
+          telemetry: { sample_packets: packetStore.slice(-30) }
+        })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      jarvisOutput.textContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const rawData = line.replace("data: ", "").trim();
+            if (rawData === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(rawData);
+              jarvisOutput.textContent += parsed.token;
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (err) {
+      jarvisOutput.textContent = "[!] Error connecting to JARVIS AI runtime engine.";
+    }
   };
 </script>
 {% endblock %}

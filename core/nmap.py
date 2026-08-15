@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import socket
+import time
 import xml.etree.ElementTree as ET
 
 class NmapEngine:
@@ -29,10 +30,6 @@ class NmapEngine:
 
     @classmethod
     async def execute_scan_stream(cls, target: str, scan_profile: str, custom_ports: str = None):
-        """
-        Executes Nmap asynchronously, yielding live terminal output and progress stats 
-        line-by-line before running an inline automated Nuclei pipeline check and yielding results.
-        """
         target = target.strip()
         source_ip = cls._get_source_ip()
 
@@ -46,38 +43,41 @@ class NmapEngine:
             yield {"type": "SCAN_COMPLETE", "payload": {"target": target, "status": "error", "summary": "Nmap environment missing.", "ports": []}}
             return
 
-        # Core arguments. --stats-every 1s forces real-time status output tracking metrics
         base_args = ["--stats-every", "1s"]
         
-        # Profile Router including Update 3 (VULN_AUDIT)
         if scan_profile == "PING_SWEEP":
             base_args.append("-sn")
         elif scan_profile == "QUICK_SCAN":
-            base_args.append("-F")
+            base_args.extend(["-F", "-T4"])
         elif scan_profile == "INTENSE_SCAN":
-            base_args.extend(["-sV", "-sC"])  # Avoid raw packet -O if unprivileged fallback triggers
+            base_args.extend(["-sV", "-sC", "-T4", "--host-timeout", "3m"])
         elif scan_profile == "VULN_AUDIT":
-            base_args.extend(["-sV", "--script=vuln"])
+            base_args.extend([
+                "-sV", 
+                "--script=vuln", 
+                "--script-timeout", "30s",
+                "--host-timeout", "3m",
+                "--max-retries", "2",
+                "-T4"
+            ])
         elif scan_profile == "CUSTOM":
             if custom_ports:
                 clean_ports = re.sub(r"[^0-9\,\-]", "", custom_ports)
                 base_args.extend(["-p", clean_ports])
         else:
-            base_args.extend(["-sV", "-F"])
+            base_args.extend(["-sV", "-F", "-T4"])
 
-        # Unprivileged safe default mode override: Force standard TCP Connect Mode (-sT) to ensure seamless execution
         if "-sn" not in base_args:
             base_args.append("-sT")
         else:
-            # Swap unprivileged Ping Sweep to TCP handshake probe vector
             base_args = ["--stats-every", "1s", "-sn", "-PS80,443,22,21,3389"]
 
-        # Final argument array request. Explicitly tracking output layout via an intermediate temp file for structural XML stability
-        xml_file = f"temp_scan_{int(asyncio.get_event_loop().time())}.xml"
+        timestamp = int(time.time() * 1000)
+        xml_file = f"temp_scan_{timestamp}.xml"
         command_arguments = base_args + ["-oX", xml_file] + target.split()
 
         yield {"type": "TERMINAL_LINE", "text": f"[*] Initializing Security Infrastructure Scan against: {target}\n"}
-        yield {"type": "TERMINAL_LINE", "text": f"[*] Executing command: nmap {' '.join(command_arguments[:-target.split().__len__()])} [targets]\n\n"}
+        yield {"type": "TERMINAL_LINE", "text": f"[*] Executing command: nmap {' '.join(base_args)} {target}\n\n"}
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -86,17 +86,13 @@ class NmapEngine:
                 stderr=asyncio.subprocess.PIPE
             )
 
-            # Asynchronous Line-by-Line Stdout Telemetry Reader
             while True:
                 line_bytes = await process.stdout.readline()
                 if not line_bytes:
                     break
                 line = line_bytes.decode('utf-8', errors='ignore')
-                
-                # Yield live text straight out to the frontend console
                 yield {"type": "TERMINAL_LINE", "text": line}
 
-                # Update 2: Match completion percentages (e.g., Stats: About 42.50% done)
                 progress_match = re.search(r"About\s+([\d\.]+)\%\s+done", line)
                 if progress_match:
                     percent = float(progress_match.group(1))
@@ -104,79 +100,73 @@ class NmapEngine:
 
             await process.wait()
 
-            # Read back and parse compiled XML output matrices
+            xml_data = ""
             try:
                 if os.path.exists(xml_file):
                     with open(xml_file, "r", encoding="utf-8", errors="ignore") as f:
                         xml_data = f.read()
                     os.remove(xml_file)
-                else:
-                    xml_data = ""
                 
                 parsed_results = cls._parse_xml_results(xml_data, source_ip, target, scan_profile)
                 
-                # =================================================================
-                # EXTENDED NUCLEI DAST PIPELINE RUNNER
-                # =================================================================
                 discovered_ports = parsed_results.get("ports", [])
                 web_targets = []
                 
                 for item in discovered_ports:
                     port_str = str(item.get("port", ""))
-                    # Isolate active web service signatures
                     if "80" in port_str or "443" in port_str or "8080" in port_str or "http" in item.get("service", "").lower():
                         clean_port = port_str.split('/')[0]
                         protocol = "https" if "443" in port_str or "ssl" in item.get("service", "").lower() else "http"
                         web_targets.append(f"{protocol}://{item.get('dest_ip', target)}:{clean_port}")
 
-                # If web targets are discovered during specific profiles, execute Nuclei automated testing
-                if web_targets and scan_profile in ["VULN_AUDIT", "INTENSE_SCAN"]:
+                nuclei_bin = ".\\nuclei.exe" if os.path.exists(".\\nuclei.exe") else shutil.which("nuclei")
+
+                if web_targets and scan_profile in ["VULN_AUDIT", "INTENSE_SCAN"] and nuclei_bin:
                     yield {"type": "TERMINAL_LINE", "text": f"\n[*] Launching Nuclei Automated Threat Hunting Pipeline against {len(web_targets)} target(s)...\n"}
                     
-                    target_file = f"nuclei_targets_{int(asyncio.get_event_loop().time())}.txt"
+                    target_file = f"nuclei_targets_{timestamp}.txt"
                     with open(target_file, "w") as tf:
                         tf.write("\n".join(web_targets))
                     
-                    # Run local nuclei engine binary using JSONL streaming output layout
-                    nuclei_process = await asyncio.create_subprocess_exec(
-                        ".\\nuclei.exe", "-list", target_file, "-jsonl", "-silent",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                    
-                    while True:
-                        line_bytes = await nuclei_process.stdout.readline()
-                        if not line_bytes:
-                            break
-                        line = line_bytes.decode('utf-8', errors='ignore').strip()
+                    try:
+                        nuclei_process = await asyncio.create_subprocess_exec(
+                            nuclei_bin, "-list", target_file, "-jsonl", "-silent",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
                         
-                        try:
-                            vuln_data = json.loads(line)
-                            vuln_id = vuln_data.get("template-id", "CVE-UNKNOWN")
-                            info = vuln_data.get("info", {})
-                            severity = info.get("severity", "info").upper()
-                            name = info.get("name", "Vulnerability detected")
-                            matcher = vuln_data.get("matched-at", target)
+                        while True:
+                            line_bytes = await nuclei_process.stdout.readline()
+                            if not line_bytes:
+                                break
+                            line = line_bytes.decode('utf-8', errors='ignore').strip()
                             
-                            yield {"type": "TERMINAL_LINE", "text": f"[Nuclei ⚠️ {severity}] {matcher} -> {name} ({vuln_id})\n"}
-                            
-                            # Standardize output mappings cleanly into your active frontend UI components table array
-                            parsed_results["ports"].append({
-                                "source_ip": source_ip,
-                                "dest_ip": matcher,
-                                "port": "VULN",
-                                "state": severity,  # This maps back onto our CSS color design classes
-                                "service": vuln_id,
-                                "version": f"⚠️ VULNERABLE: {name}"
-                            })
-                        except Exception:
-                            if line:
-                                yield {"type": "TERMINAL_LINE", "text": f"{line}\n"}
-                            
-                    await nuclei_process.wait()
-                    if os.path.exists(target_file):
-                        os.remove(target_file)
-                # =================================================================
+                            try:
+                                vuln_data = json.loads(line)
+                                vuln_id = vuln_data.get("template-id", "CVE-UNKNOWN")
+                                info = vuln_data.get("info", {})
+                                severity = info.get("severity", "info").upper()
+                                name = info.get("name", "Vulnerability detected")
+                                matcher = vuln_data.get("matched-at", target)
+                                
+                                yield {"type": "TERMINAL_LINE", "text": f"[Nuclei ⚠️ {severity}] {matcher} -> {name} ({vuln_id})\n"}
+                                
+                                parsed_results["ports"].append({
+                                    "source_ip": source_ip,
+                                    "dest_ip": matcher,
+                                    "port": "VULN",
+                                    "state": severity,
+                                    "service": vuln_id,
+                                    "version": f"⚠️ VULNERABLE: {name}"
+                                })
+                            except Exception:
+                                if line:
+                                    yield {"type": "TERMINAL_LINE", "text": f"{line}\n"}
+                                
+                        await nuclei_process.wait()
+                    finally:
+                        if os.path.exists(target_file):
+                            os.remove(target_file)
                 
                 yield {"type": "SCAN_COMPLETE", "payload": parsed_results}
             except Exception as e:
@@ -187,6 +177,9 @@ class NmapEngine:
 
     @classmethod
     def _parse_xml_results(cls, xml_string: str, source_ip: str, default_target: str, scan_profile: str) -> dict:
+        if not xml_string.strip():
+            return {"target": default_target, "status": "error", "summary": "No XML telemetry generated by Nmap.", "ports": []}
+
         try:
             root = ET.fromstring(xml_string)
             discovered_ports = []
@@ -219,7 +212,6 @@ class NmapEngine:
                             if combined_version:
                                 version_banner = combined_version
 
-                        # Update 3: Extract NSE Vulnerability script logs and inject them directly into versions columns
                         script_elements = port.findall('script')
                         vuln_logs = []
                         for script in script_elements:
@@ -242,5 +234,5 @@ class NmapEngine:
 
             summary = f"Discovery Sweeps Completed: Target is {host_status}." if scan_profile == "PING_SWEEP" else f"Scan fully finalized. Status Host: {host_status}."
             return {"target": default_target, "status": "success", "summary": summary, "ports": discovered_ports}
-        except Exception:
-            return {"target": default_target, "status": "error", "summary": "Error mapping output payload tree.", "ports": []}
+        except Exception as e:
+            return {"target": default_target, "status": "error", "summary": f"Error mapping output payload tree: {str(e)}", "ports": []}

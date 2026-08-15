@@ -14,6 +14,20 @@
   th, td { padding: 14px 18px; border-bottom: 1px solid var(--border); text-align: left; }
   th { background: #070f1a; color: #b9c9dd; }
   .terminal-box { background: #06101b; border: 1px solid var(--border); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; color: var(--green); margin-bottom: 18px; }
+
+  /* Export Action Bar */
+  .export-actions { display: flex; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed #22374e; align-items: center; }
+  .btn-export { padding: 8px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s ease; }
+  .btn-html { background: #0f766e; color: #fff; border-color: #14b8a6; }
+  .btn-html:hover:not(:disabled) { background: #115e59; }
+  .btn-md { background: #1e3a5f; color: #fff; border-color: #3b82f6; }
+  .btn-md:hover:not(:disabled) { background: #254a78; }
+  .btn-export:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* JARVIS Explanation Box Styling */
+  .jarvis-panel { margin-top: 18px; padding: 22px; }
+  .jarvis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .jarvis-output { background: #06101b; padding: 18px; border-radius: 6px; border: 1px solid var(--border); font-size: 14px; line-height: 1.6; min-height: 90px; color: #d0e1f9; white-space: pre-wrap; }
 </style>
 {% endblock %}
 
@@ -35,17 +49,34 @@
     </div>
     <button class="btn primary" id="startBtn">▶ Start Fuzzing</button>
   </div>
+
+  <div class="export-actions">
+    <span style="font-size: 13px; font-weight: 600; color: #828997;">📊 Export Fuzzing Audit:</span>
+    <button class="btn-export btn-html" id="btnExportFuzzHtml" disabled>📄 Export HTML (Print/PDF)</button>
+    <button class="btn-export btn-md" id="btnExportFuzzMd" disabled>📝 Export Markdown (.md)</button>
+  </div>
 </section>
 
 <div class="terminal-box" id="fuzzTerminal">[*] Status: Ready</div>
 
 <section class="panel">
-  <div class="panel-heading">Discovered Endpoints</div>
+  <div class="panel-heading" style="padding: 17px 20px; border-bottom: 1px solid var(--border); font-weight: 700;">Discovered Endpoints</div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Matched URL</th><th>Status Code</th><th>Length</th><th>Words</th></tr></thead>
       <tbody id="fuzzResults"></tbody>
     </table>
+  </div>
+</section>
+
+<!-- DEDICATED INLINE JARVIS AI EXPLANATION BOX -->
+<section class="panel jarvis-panel">
+  <div class="jarvis-header">
+    <h3 style="margin: 0; color: var(--cyan); font-size: 18px;">🤖 JARVIS Attack Surface Analysis</h3>
+    <button class="btn primary" id="explainFuzzerBtn">Analyze Exposed Endpoints with JARVIS</button>
+  </div>
+  <div class="jarvis-output" id="jarvisFuzzerBox">
+Click "Analyze Exposed Endpoints with JARVIS" after fuzzing to evaluate risk exposure on hidden routes (e.g., /admin, .env, backups) and generate Nginx/Apache access controls.
   </div>
 </section>
 {% endblock %}
@@ -58,8 +89,14 @@
   const wordlistInput = document.getElementById("wordlist");
   const fuzzResults = document.getElementById("fuzzResults");
   const fuzzTerminal = document.getElementById("fuzzTerminal");
+  const explainFuzzerBtn = document.getElementById("explainFuzzerBtn");
+  const jarvisFuzzerBox = document.getElementById("jarvisFuzzerBox");
+  const btnExportFuzzHtml = document.getElementById("btnExportFuzzHtml");
+  const btnExportFuzzMd = document.getElementById("btnExportFuzzMd");
 
   let ws = null;
+  let discoveredEndpoints = [];
+  let activeAiAnalysis = "";
 
   function connectWS() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -75,12 +112,18 @@
         fuzzTerminal.textContent = msg.text;
       } else if (msg.type === "FUZZ_RESULT") {
         const item = msg.data;
+        discoveredEndpoints.push(item);
+
         const row = document.createElement("tr");
         row.innerHTML = `<td><strong>${item.url}</strong></td><td><span class="badge">${item.status}</span></td><td>${item.length} B</td><td>${item.words}</td>`;
         fuzzResults.appendChild(row);
       } else if (msg.type === "FUZZ_COMPLETE") {
         startBtn.disabled = false;
         fuzzTerminal.textContent = "[+] Fuzzing process finished.";
+        if (discoveredEndpoints.length > 0) {
+          btnExportFuzzHtml.disabled = false;
+          btnExportFuzzMd.disabled = false;
+        }
       }
     };
 
@@ -100,8 +143,13 @@
     }
 
     fuzzResults.replaceChildren();
+    discoveredEndpoints = [];
+    activeAiAnalysis = "";
     startBtn.disabled = true;
+    btnExportFuzzHtml.disabled = true;
+    btnExportFuzzMd.disabled = true;
     fuzzTerminal.textContent = "[*] Dispatching fuzz request...";
+    jarvisFuzzerBox.textContent = "Click \"Analyze Exposed Endpoints with JARVIS\" after fuzzing...";
     
     ws.send(JSON.stringify({ 
       action: "RUN_FUZZ", 
@@ -109,5 +157,87 @@
       wordlist: wordlistInput.value.trim() 
     }));
   };
+
+  explainFuzzerBtn.onclick = async () => {
+    if (!discoveredEndpoints.length) {
+      jarvisFuzzerBox.textContent = "[!] No endpoints discovered yet. Run the fuzzer first!";
+      return;
+    }
+
+    jarvisFuzzerBox.textContent = "Analyzing exposed attack surface with JARVIS AI...";
+    activeAiAnalysis = "";
+
+    try {
+      const response = await fetch("/api/jarvis/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "Analyze these discovered Web Fuzzer endpoints. Flag sensitive files (e.g., .env, /admin, backups), assign risk levels, and provide exact Nginx/Apache block rules.",
+          telemetry: { endpoints: discoveredEndpoints }
+        })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      jarvisFuzzerBox.textContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const rawData = line.replace("data: ", "").trim();
+            if (rawData === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(rawData);
+              jarvisFuzzerBox.textContent += parsed.token;
+              activeAiAnalysis += parsed.token;
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (err) {
+      jarvisFuzzerBox.textContent = "[!] Connection error to JARVIS engine runtime.";
+    }
+  };
+
+  async function exportFuzzerReport(format) {
+    const target = targetInput.value.trim() || "http://target.local";
+    const filename = `FFUF_Discovery_Report_${target.replace(/[\/\\:]/g, "_")}.${format === "html" ? "html" : "md"}`;
+
+    try {
+      const response = await fetch("/api/reports/export-universal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: target,
+          fuzz_data: discoveredEndpoints,
+          format: format,
+          ai_analysis: activeAiAnalysis || "Automated endpoint discovery completed via FFUF."
+        })
+      });
+
+      if (!response.ok) throw new Error("Report generation failed.");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Export error: ${err.message}`);
+    }
+  }
+
+  btnExportFuzzHtml.onclick = () => exportFuzzerReport("html");
+  btnExportFuzzMd.onclick = () => exportFuzzerReport("md");
 </script>
 {% endblock %}
