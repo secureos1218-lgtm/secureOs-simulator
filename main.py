@@ -648,5 +648,12 @@ def websocket_nuclei_endpoint(ws):
         except Exception:
             break
 
+# ==========================================
+# 10. PRODUCTION DYNAMIC ENTRY POINT
+# ==========================================
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True, use_reloader=False)
+    port = int(os.environ.get("PORT", 8000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    print(f"[*] SecurOS Engine Booting on {host}:{port}...")
+    app.run(host=host, port=port, debug=False, use_reloader=False)
