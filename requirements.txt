@@ -3,7 +3,8 @@ Flask>=3.0.0
 Flask-Sock>=0.7.0
 simple-websocket>=1.1.0
 
-# System Telemetry & Network Monitoring
+# Network Sniffing & System Telemetry
+scapy>=2.5.0
 psutil>=6.0.0
 Pillow>=10.4.0
 
