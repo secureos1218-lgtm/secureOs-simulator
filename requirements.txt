@@ -1,3 +1,15 @@
-Flask==3.0.2
-Flask-Sock==0.7.0
-simple-websocket==1.0.0
+# Web Framework & WebSocket Streaming
+Flask>=3.0.0
+Flask-Sock>=0.7.0
+simple-websocket>=1.1.0
+
+# System Telemetry & Network Monitoring
+psutil>=6.0.0
+Pillow>=10.4.0
+
+# AI Copilot & Vector Database (RAG)
+google-genai>=2.18.0
+chromadb>=1.5.0
+
+# Cloud Database & Sync
+firebase-admin>=7.5.0

@@ -1,25 +1,120 @@
-﻿# Byte-compiled / optimized / DLL files
+﻿# ==========================================
+# 1. PYTHON ARTIFACTS & BYTECODE
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Environments
-.env
-.venv
+# ==========================================
+# 2. PYTHON VIRTUAL ENVIRONMENTS
+# ==========================================
 env/
 venv/
 ENV/
+env.bak/
+venv.bak/
+.venv/
+.env/
 
-# Sensitive Keys & Credentials
+# ==========================================
+# 3. SECRETS, API KEYS & CREDENTIALS
+# ==========================================
+.env
+.env.*
+!.env.example
 firebase_key.json
 *.key
 *.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+secrets.json
+service_account.json
 
-# Local Vector Database & Capture Caches
+# ==========================================
+# 4. VECTOR DATABASE, CACHES & CAPTURES
+# ==========================================
+# ChromaDB / Vector storage
 cyber_kb/
-*.pcap
-*.cap
+chroma/
+*.sqlite3
+*.db
 
-# OS Generated Files
+# Live Packet Captures & Dumps
+*.pcap
+*.pcapng
+*.cap
+*.dump
+captures/
+
+# ==========================================
+# 5. FRONTEND & NODE / VITE ARTIFACTS
+# ==========================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.turbo/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.eslintcache
+.stylelintcache
+
+# ==========================================
+# 6. TESTING & RUNTIME LOGS
+# ==========================================
+*.log
+logs/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# ==========================================
+# 7. IDE & OPERATING SYSTEM JUNK
+# ==========================================
+# Editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Operating System
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini

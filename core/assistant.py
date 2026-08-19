@@ -1,7 +1,12 @@
 import os
 import time
-from google import genai
-from google.genai import types
+
+try:
+    from google import genai
+    from google.genai import types
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
 
 try:
     import chromadb
@@ -9,11 +14,38 @@ try:
 except ImportError:
     HAS_CHROMA = False
 
-FAST_FREE_MODELS = [
+DEFAULT_MODELS = [
     'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-flash-latest'
+    'gemini-2.5-pro',
 ]
+
+FALLBACK_KNOWLEDGE_MAP = {
+    "vapt": """### Vulnerability Assessment & Penetration Testing (VAPT)
+
+**VAPT** is an end-to-end security testing methodology that combines automated vulnerability identification with manual exploitation to determine the real-world risk to an organization's assets.
+
+**Core Methodological Phases:**
+* **1. Reconnaissance & Target Scoping**: Active and passive asset mapping, port scanning (Nmap), and service identification.
+* **2. Vulnerability Assessment (VA)**: Automated vulnerability discovery (DAST/SAST via tools like Nuclei, Nessus) to detect misconfigurations, unpatched CVEs, and insecure endpoints.
+* **3. Penetration Testing (PT)**: Safe, targeted exploitation to validate exposure, demonstrate lateral movement paths (e.g., AD Kerberoasting, DCSync), and assess data exposure impact.
+* **4. Executive & Technical Reporting**: Risk ranking via CVSS v3/v4 scoring and structured remediation directives.
+
+**Primary Objectives:**
+* Validate defensive controls (Firewall, EDR, SIEM).
+* Prevent unauthorized initial access and remote code execution.
+* Ensure regulatory compliance with ISO 27001, PCI-DSS, and SOC 2.""",
+    
+    "owasp": """### OWASP Top 10 Core Security Controls
+* **A01: Broken Access Control**: Enforce strict server-side authorization on every endpoint.
+* **A02: Cryptographic Failures**: Mandate TLS 1.3 in transit and strong algorithms (Argon2id, AES-GCM) at rest.
+* **A03: Injection (SQLi/XSS/Command)**: Utilize parameterized queries, ORM abstractions, and output encoding.
+* **A04: Insecure Design**: Apply threat modeling and secure architecture frameworks before coding.""",
+    
+    "active directory": """### Active Directory Hardening & Defense
+* **Kerberoasting Defense**: Migrate service accounts to Group Managed Service Accounts (gMSA) with 128-bit AES keys.
+* **DCSync Defense**: Audit AD ACLs to remove unneeded `DS-Replication-Get-Changes` and `DS-Replication-Get-Changes-All` rights.
+* **Tiered Administration**: Enforce PAWs (Privileged Access Workstations) and eliminate domain administrator logins on member endpoints."""
+}
 
 class SecurityAssistant:
     def __init__(self, db_path="./cyber_kb"):
@@ -32,73 +64,54 @@ class SecurityAssistant:
 
     def _init_ai_client(self):
         api_key = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
-        if api_key:
+        if api_key and HAS_GENAI:
             try:
                 self.ai_client = genai.Client(api_key=api_key)
-                print(f"[+] Security Assistant High-Speed Client initialized (Using: {FAST_FREE_MODELS[0]}).")
+                print(f"[+] Security Assistant AI Client initialized.")
             except Exception as e:
                 print(f"[!] Gemini Assistant Initialization Error: {str(e)}")
-        else:
+        elif HAS_GENAI:
             try:
                 self.ai_client = genai.Client()
             except Exception:
-                print("[!] Warning: GEMINI_API_KEY environment variable is not set.")
+                pass
 
-    def seed_knowledge_base(self, documents: list, metadatas: list, ids: list):
-        """Populates or updates local ChromaDB with domain knowledge from seed_kb.py."""
-        if not self.kb_collection:
-            return
-        try:
-            self.kb_collection.upsert(
-                documents=documents,
-                metadatas=metadatas,
-                ids=ids
-            )
-            print(f"[+] Successfully seeded {len(ids)} documents into ChromaDB Vector Store.")
-        except Exception as e:
-            print(f"[!] Vector store seed error: {str(e)}")
-
-    def _call_gemini_fast(self, prompt: str, system_prompt: str, local_fallback: str = "") -> str:
-        if not self.ai_client:
-            self._init_ai_client()
-            if not self.ai_client:
-                return local_fallback or "Gemini API client uninitialized. Configure your `GEMINI_API_KEY`."
-
-        # Zero-latency configuration: disable thinking budget and limit token overhead
-        fast_config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=0.2,
-            max_output_tokens=1500,
-            thinking_config=types.ThinkingConfig(thinking_budget=0)
+    def _get_static_fallback(self, query: str, rag_context: str = "") -> str:
+        q = query.lower()
+        for key, val in FALLBACK_KNOWLEDGE_MAP.items():
+            if key in q:
+                return val
+        if rag_context:
+            return f"### Security Knowledge Reference\n\n{rag_context}"
+        return (
+            "### SecurOS Security Advisory\n\n"
+            "Query processed. Configure your `GEMINI_API_KEY` to enable unrestricted generative responses, "
+            "or choose from one of the quick security directives above (OWASP, Active Directory, Zero Trust)."
         )
 
-        last_error = ""
-        for model_id in FAST_FREE_MODELS:
-            try:
-                response = self.ai_client.models.generate_content(
-                    model=model_id,
-                    contents=prompt,
-                    config=fast_config
-                )
-                if response and response.text:
-                    return response.text
-            except Exception as e:
-                last_error = str(e)
+    def _call_gemini_fast(self, prompt: str, system_prompt: str, user_query: str = "", local_fallback: str = "") -> str:
+        if not self.ai_client:
+            self._init_ai_client()
+
+        if self.ai_client:
+            for model_id in DEFAULT_MODELS:
                 try:
-                    # Fallback config without thinking_budget if not supported
+                    config = types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        temperature=0.2,
+                        max_output_tokens=1500
+                    )
                     response = self.ai_client.models.generate_content(
                         model=model_id,
                         contents=prompt,
-                        config=types.GenerateContentConfig(system_instruction=system_prompt)
+                        config=config
                     )
                     if response and response.text:
                         return response.text
                 except Exception:
                     continue
 
-        if local_fallback:
-            return f"[⚠️ Fast Local RAG Output]:\n\n{local_fallback}"
-        return f"Error processing query: {last_error}"
+        return self._get_static_fallback(user_query, local_fallback)
 
     def explain_scan_telemetry(self, tool_type: str, scan_data: dict) -> str:
         system_prompt = (
@@ -106,7 +119,7 @@ class SecurityAssistant:
             "Quickly summarize the vulnerability, CVSS score, and provide 1-2 exact CLI remediation commands."
         )
         prompt = f"Tool: {tool_type}\nRaw Telemetry Data:\n{scan_data}\n\nProvide rapid threat breakdown and remediation."
-        return self._call_gemini_fast(prompt, system_prompt)
+        return self._call_gemini_fast(prompt, system_prompt, user_query=tool_type)
 
     def query_cyber_knowledge(self, user_query: str) -> str:
         retrieved_docs = []
@@ -129,12 +142,13 @@ class SecurityAssistant:
             meta_info = f" [Source: {retrieved_metas[i].get('book', 'Internal Docs')}]" if i < len(retrieved_metas) else ""
             context_blocks.append(f"- {doc}{meta_info}")
 
-        context_str = "\n".join(context_blocks) if context_blocks else "No specific internal textbook knowledge found."
+        context_str = "\n".join(context_blocks) if context_blocks else ""
 
         system_prompt = (
-            "You are the SecurOS AI Security Assistant. Answer cybersecurity questions concisely and clearly. "
-            "Use the provided internal knowledge context when relevant to ground your answers."
+            "You are the SecurOS AI Security Assistant. Answer cybersecurity questions concisely, "
+            "with precise technical depth, structured headers, and CLI/defensive controls. "
+            "Use the provided internal knowledge context when relevant."
         )
-        prompt = f"Context from Knowledge Base:\n{context_str}\n\nUser Question: {user_query}"
+        prompt = f"Context from Knowledge Base:\n{context_str}\n\nUser Question: {user_query}" if context_str else f"User Question: {user_query}"
         
-        return self._call_gemini_fast(prompt, system_prompt, local_fallback=context_str)
+        return self._call_gemini_fast(prompt, system_prompt, user_query=user_query, local_fallback=context_str)

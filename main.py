@@ -6,8 +6,10 @@ import threading
 import time
 import subprocess
 import io
+import socket
+import psutil
 from PIL import Image
-from flask import Flask, jsonify, render_template, request, send_file, send_from_directory, Response, stream_with_context
+from flask import Flask, jsonify, request, send_file, Response, stream_with_context
 from flask_sock import Sock
 from simple_websocket import ConnectionClosed
 
@@ -23,18 +25,18 @@ from core.nuclei import NucleiEngine
 from core.assistant import SecurityAssistant
 from core.jarvis import JarvisEngine
 from core.reporter import ReportGenerator
+from core.rules import default_rule_engine
 
-app = Flask(__name__, template_folder="templates")
+app = Flask(__name__)
 sock = Sock(app)
 
 ACTIVE_SCANS = {}
 
-# Initialize SecurOS AI Assistant & JARVIS Engines
 sec_assistant = SecurityAssistant()
 jarvis = JarvisEngine()
 
 # ==========================================
-# HTTP SECURITY HEADERS MIDDLEWARE
+# HTTP SECURITY HEADERS & CORS MIDDLEWARE
 # ==========================================
 
 @app.after_request
@@ -43,6 +45,9 @@ def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
     return response
 
 # ==========================================
@@ -81,39 +86,90 @@ def save_scan_to_firestore(target, profile, ports_data):
         print(f"[!] Firestore cloud sync error: {str(e)}")
 
 # ==========================================
-# 1. FRONTEND WORKSPACE PAGE RENDERS
+# 1. API STATUS / HEALTH ROUTE
 # ==========================================
 
 @app.get("/")
 def index():
-    return render_template("components/nmap_ui.html")
-
-@app.get("/wireshark")
-def wireshark_ui_panel():
-    return render_template("components/wireshark_ui.html")
-
-@app.get("/dashboard")
-def security_dashboard_view():
-    return render_template("dashboard_ui.html")
-
-@app.get("/steg")
-def steganography_ui_view():
-    return render_template("components/steg_ui.html")
-
-@app.get("/fuzzer")
-def fuzzer_ui_view():
-    return render_template("components/fuzzer_ui.html")
-
-@app.get("/nuclei")
-def nuclei_ui_view():
-    return render_template("components/nuclei_ui.html")
-
-@app.get("/assistant")
-def jarvis_workspace_page():
-    return render_template("assistant_page.html")
+    return jsonify({
+        "status": "online",
+        "service": "SecurOS Threat Defense Suite Backend",
+        "version": "2.0",
+        "endpoints": {
+            "websockets": ["/ws/nmap", "/ws/wireshark", "/ws/nuclei", "/ws/fuzzer"],
+            "jarvis": "/api/jarvis/stream",
+            "assistant": "/api/assistant/chat",
+            "interfaces": "/api/wireshark/interfaces",
+            "reports": "/api/reports/export-universal"
+        }
+    })
 
 # ==========================================
-# 2. FIREBASE REST API ENDPOINTS
+# 2. ROBUST NETWORK INTERFACE DISCOVERY
+# ==========================================
+
+@app.get("/api/wireshark/interfaces")
+def get_network_interfaces():
+    adapters = []
+    try:
+        io_counters = psutil.net_io_counters(pernic=True) if hasattr(psutil, "net_io_counters") else {}
+        addrs = psutil.net_if_addrs() if hasattr(psutil, "net_if_addrs") else {}
+        stats = psutil.net_if_stats() if hasattr(psutil, "net_if_stats") else {}
+
+        for nic_name, addr_list in addrs.items():
+            ipv4 = "Unassigned"
+            for a in addr_list:
+                if getattr(a, "family", None) == socket.AF_INET:
+                    ipv4 = a.address
+                    break
+
+            nic_stats = stats.get(nic_name)
+            is_up = nic_stats.isup if nic_stats else True
+            counters = io_counters.get(nic_name)
+            bytes_sent = counters.bytes_sent if counters else 0
+            bytes_recv = counters.bytes_recv if counters else 0
+
+            is_live = is_up and (bytes_sent + bytes_recv > 0) and ipv4 not in ["Unassigned", "127.0.0.1"]
+
+            adapters.append({
+                "id": nic_name,
+                "name": nic_name,
+                "ip": ipv4,
+                "is_up": is_up,
+                "is_live": is_live,
+                "bytes_recv": bytes_recv,
+                "bytes_sent": bytes_sent
+            })
+
+        if not adapters:
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            adapters = [
+                {"id": "Default Adapter", "name": "Primary Adapter", "ip": local_ip, "is_up": True, "is_live": True, "bytes_recv": 1024, "bytes_sent": 1024},
+                {"id": "Loopback", "name": "Loopback (127.0.0.1)", "ip": "127.0.0.1", "is_up": True, "is_live": False, "bytes_recv": 0, "bytes_sent": 0}
+            ]
+
+        adapters.sort(key=lambda x: (not x["is_live"], not x["is_up"], x["name"]))
+        return jsonify({"status": "success", "interfaces": adapters})
+
+    except Exception as e:
+        hostname = socket.gethostname()
+        try:
+            local_ip = socket.gethostbyname(hostname)
+        except Exception:
+            local_ip = "127.0.0.1"
+
+        return jsonify({
+            "status": "success",
+            "interfaces": [
+                {"id": "Default Adapter", "name": "Default Network Adapter", "ip": local_ip, "is_up": True, "is_live": True, "bytes_recv": 100, "bytes_sent": 100},
+                {"id": "127.0.0.1", "name": "Loopback", "ip": "127.0.0.1", "is_up": True, "is_live": False, "bytes_recv": 0, "bytes_sent": 0}
+            ],
+            "warning": str(e)
+        })
+
+# ==========================================
+# 3. FIREBASE REST API ENDPOINTS
 # ==========================================
 
 @app.route("/api/history", methods=["GET"])
@@ -124,21 +180,33 @@ def get_firestore_history():
     try:
         scans_ref = db.collection("scan_history").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(20)
         docs = scans_ref.stream()
-        
+
         history = []
         for doc in docs:
             data = doc.to_dict()
             if data.get("timestamp"):
                 data["timestamp"] = data["timestamp"].isoformat() if hasattr(data["timestamp"], 'isoformat') else str(data["timestamp"])
             history.append(data)
-            
+
         return jsonify({"status": "success", "history": history})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ==========================================
-# 3. SECUROS & JARVIS AI REST API ENDPOINTS
+# 4. SECUROS & JARVIS AI DUAL REST API ENDPOINTS
 # ==========================================
+
+@app.route("/api/assistant/chat", methods=["POST"])
+def assistant_chat_api():
+    payload = request.get_json() or {}
+    query = payload.get("query", "").strip()
+    if not query:
+        return jsonify({"status": "error", "message": "Query string required."}), 400
+    try:
+        answer = sec_assistant.query_cyber_knowledge(query)
+        return jsonify({"status": "success", "answer": answer})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/assistant/explain-scan", methods=["POST"])
 def explain_scan():
@@ -148,34 +216,24 @@ def explain_scan():
     explanation = sec_assistant.explain_scan_telemetry(tool, data)
     return jsonify({"status": "success", "explanation": explanation})
 
-@app.route("/api/assistant/chat", methods=["POST"])
-def chat_assistant():
-    payload = request.get_json() or {}
-    query = payload.get("query", "")
-    if not query:
-        return jsonify({"status": "error", "message": "Query string required."}), 400
-    answer = sec_assistant.query_cyber_knowledge(query)
-    return jsonify({"status": "success", "answer": answer})
-
 @app.route("/api/jarvis/stream", methods=["POST"])
 def jarvis_stream_api():
     data = request.get_json() or {}
-    user_query = data.get("query", "")
+    user_query = data.get("prompt") or data.get("query", "")
     history = data.get("history", [])
-    telemetry = data.get("telemetry", None)
+    telemetry = data.get("context") or data.get("telemetry", None)
 
     def generate():
         try:
             for token in jarvis.stream_chat(user_query, history, telemetry):
-                yield f"data: {json.dumps({'token': token})}\n\n"
+                yield token
         except Exception as e:
-            yield f"data: {json.dumps({'token': f'[!] Stream error: {str(e)}'})}\n\n"
-        yield "data: [DONE]\n\n"
+            yield f"[!] Stream error: {str(e)}"
 
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    return Response(stream_with_context(generate()), mimetype="text/plain")
 
 # ==========================================
-# 4. DIGITAL STEGANOGRAPHY & FORENSICS API
+# 5. DIGITAL STEGANOGRAPHY & FORENSICS API
 # ==========================================
 
 def text_to_bits(text):
@@ -187,23 +245,23 @@ def text_to_bits(text):
 
 @app.route("/api/steg/encode", methods=["POST"])
 def encode_steganography():
-    if 'file' not in request.files or 'message' not in request.form:
-        return jsonify({"status": "error", "message": "Missing file or message payload."}), 400
-        
-    file = request.files['file']
-    message = request.form['message']
-    
+    file = request.files.get('file') or request.files.get('image')
+    message = request.form.get('message', '')
+
+    if not file or not message:
+        return jsonify({"status": "error", "message": "Missing image file or secret message payload."}), 400
+
     try:
         img = Image.open(file.stream).convert('RGB')
         pixels = list(img.getdata())
         bits = text_to_bits(message)
-        
+
         if len(bits) > len(pixels) * 3:
             return jsonify({"status": "error", "message": "Message exceeds total pixel capacity."}), 400
-            
+
         new_pixels = []
         bit_index = 0
-        
+
         for pixel in pixels:
             r, g, b = pixel
             if bit_index < len(bits):
@@ -216,72 +274,74 @@ def encode_steganography():
                 b = (b & ~1) | bits[bit_index]
                 bit_index += 1
             new_pixels.append((r, g, b))
-            
+
         out_img = Image.new(img.mode, img.size)
         out_img.putdata(new_pixels)
-        
+
         img_io = io.BytesIO()
         out_img.save(img_io, 'PNG')
         img_io.seek(0)
-        
-        return send_file(img_io, mimetype='image/png', as_attachment=True, download_name='steg_carrier.png')
+
+        return send_file(img_io, mimetype='image/png', as_attachment=True, download_name='stego_carrier.png')
     except Exception as e:
         return jsonify({"status": "error", "message": f"Encoding failure: {str(e)}"}), 500
 
 @app.route("/api/steg/decode", methods=["POST"])
 def decode_steganography():
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file detected."}), 400
-        
-    file = request.files['file']
+    file = request.files.get('file') or request.files.get('image')
+    if not file:
+        return jsonify({"status": "error", "message": "No file uploaded."}), 400
+
     try:
         img = Image.open(file.stream).convert('RGB')
         pixels = list(img.getdata())
         extracted_bits = [str(color_channel & 1) for pixel in pixels for color_channel in pixel]
-                
+
         chars = []
         for i in range(0, len(extracted_bits), 8):
             byte_str = "".join(extracted_bits[i:i+8])
-            if len(byte_str) < 8: 
+            if len(byte_str) < 8:
                 break
             char_code = int(byte_str, 2)
-            if char_code == 0: 
+            if char_code == 0:
                 break
             chars.append(chr(char_code))
-            
-        return jsonify({"status": "success", "message": "".join(chars)})
+
+        decoded_msg = "".join(chars)
+        return jsonify({"status": "success", "message": decoded_msg if decoded_msg else "No secret message found in LSB."})
     except Exception as e:
         return jsonify({"status": "error", "message": f"Decoding failure: {str(e)}"}), 500
 
 @app.route("/api/steg/analyze-plane", methods=["POST"])
 def analyze_bit_plane():
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file detected."}), 400
-        
-    file = request.files['file']
+    file = request.files.get('file') or request.files.get('image')
+    plane = int(request.form.get('plane', 0))
+    if not file:
+        return jsonify({"status": "error", "message": "No file uploaded."}), 400
+
     try:
         img = Image.open(file.stream).convert('RGB')
         width, height = img.size
-        
+
         analysis_canvas = Image.new("L", (width, height))
         pixels = img.load()
         canvas_pixels = analysis_canvas.load()
-        
+
         for y in range(height):
             for x in range(width):
                 r, g, b = pixels[x, y]
-                canvas_pixels[x, y] = 255 if (r & 1) == 1 else 0
-                
+                canvas_pixels[x, y] = 255 if ((r >> plane) & 1) == 1 else 0
+
         img_io = io.BytesIO()
         analysis_canvas.save(img_io, 'PNG')
         img_io.seek(0)
-        
+
         return send_file(img_io, mimetype='image/png')
     except Exception as e:
         return jsonify({"status": "error", "message": f"Analysis failed: {str(e)}"}), 500
 
 # ==========================================
-# 5. ASYNCHRONOUS NMAP ENGINE WEBSOCKET ROUTE
+# 6. ASYNCHRONOUS NMAP ENGINE WEBSOCKET ROUTE
 # ==========================================
 
 @sock.route("/ws/nmap")
@@ -293,7 +353,7 @@ def websocket_nmap_endpoint(ws):
             try:
                 async for event in NmapEngine.execute_scan_stream(target, profile, custom_ports):
                     ws.send(json.dumps(event))
-                    
+
                     if event.get("type") == "SCAN_COMPLETE":
                         payload = event.get("payload", {})
                         if payload.get("status") == "success":
@@ -305,16 +365,12 @@ def websocket_nmap_endpoint(ws):
             except Exception as e:
                 try:
                     ws.send(json.dumps({
-                        "type": "TERMINAL_LINE", 
-                        "text": f"\n[!] Scan Finished with bounds: {str(e)}\n"
+                        "type": "TERMINAL_LINE",
+                        "text": f"\n[!] Scan Finished with notice: {str(e)}\n"
                     }))
-                except Exception:
-                    pass
-            finally:
-                try:
                     ws.send(json.dumps({
-                        "type": "SCAN_COMPLETE", 
-                        "payload": {"target": target, "status": "failed", "summary": "Scan cycle finalized.", "ports": []}
+                        "type": "SCAN_COMPLETE",
+                        "payload": {"target": target, "status": "failed", "summary": str(e), "ports": []}
                     }))
                 except Exception:
                     pass
@@ -335,15 +391,15 @@ def websocket_nmap_endpoint(ws):
             raw_data = ws.receive()
             if not raw_data:
                 break
-                
+
             payload = json.loads(raw_data)
-            action = payload.get("action")
-            
-            if action == "RUN_NMAP":
+            action = payload.get("action", "RUN_NMAP")
+
+            if action == "RUN_NMAP" or ("target" in payload and action not in ["STOP_SCAN", "CANCEL_SCAN"]):
                 target = payload.get("target", "127.0.0.1").strip()
-                profile = payload.get("profile", "QUICK_SCAN")
-                custom_ports = payload.get("custom_ports") or payload.get("ports")
-                
+                profile = payload.get("flags") or payload.get("profile", "-T4 -F")
+                custom_ports = payload.get("custom_ports") or payload.get("ports", "1-1000")
+
                 scan_thread = threading.Thread(
                     target=run_async_scan_loop,
                     args=(target, profile, custom_ports),
@@ -351,19 +407,19 @@ def websocket_nmap_endpoint(ws):
                 )
                 ACTIVE_SCANS[session_id] = scan_thread
                 scan_thread.start()
-                
-            elif action == "STOP_SCAN" or action == "CANCEL_SCAN":
+
+            elif action in ["STOP_SCAN", "CANCEL_SCAN"]:
                 if os.name == 'nt':
                     subprocess.run(["taskkill", "/F", "/IM", "nmap.exe"], capture_output=True)
                 ws.send(json.dumps({
-                    "type": "TERMINAL_LINE", 
+                    "type": "TERMINAL_LINE",
                     "text": "\n[!] Scan forcefully canceled.\n"
                 }))
                 ws.send(json.dumps({
-                    "type": "SCAN_COMPLETE", 
-                    "payload": {"target": "", "status": "failed", "summary": "Cancelled", "ports": []}
+                    "type": "SCAN_COMPLETE",
+                    "payload": {"target": "", "status": "cancelled", "summary": "Cancelled", "ports": []}
                 }))
-                
+
         except ConnectionClosed:
             if os.name == 'nt':
                 subprocess.run(["taskkill", "/F", "/IM", "nmap.exe"], capture_output=True)
@@ -372,16 +428,97 @@ def websocket_nmap_endpoint(ws):
             break
 
 # ==========================================
-# 6. WIRESHARK REST & PCAP EXPORT ENDPOINTS
+# 7. WIRESHARK LIVE PACKET CAPTURE STREAM (NIDS INTEGRATED)
 # ==========================================
 
-@app.get("/api/wireshark/interfaces")
-def get_network_interfaces():
-    return jsonify(WiresharkEngine.get_interfaces())
+@sock.route("/ws/wireshark")
+def websocket_wireshark_endpoint(ws):
+    packet_queue = queue.Queue(maxsize=20000)
+    stop_event = threading.Event()
+    stop_event.set()
+
+    def socket_drain_loop():
+        count = 0
+        while not stop_event.is_set():
+            try:
+                raw_pkt = packet_queue.get(timeout=0.1)
+                if isinstance(raw_pkt, dict):
+                    inner = raw_pkt.get("packet") or raw_pkt.get("data") or raw_pkt.get("payload") or raw_pkt
+                else:
+                    inner = {}
+
+                count += 1
+                num = inner.get("num") or inner.get("number") or inner.get("no") or inner.get("id") or count
+                pkt_time = inner.get("time") or inner.get("timestamp") or inner.get("ts") or time.strftime("%H:%M:%S")
+                src = inner.get("src") or inner.get("source") or inner.get("src_ip") or inner.get("ip_src") or inner.get("source_ip") or "127.0.0.1"
+                dst = inner.get("dst") or inner.get("destination") or inner.get("dst_ip") or inner.get("ip_dst") or inner.get("destination_ip") or "127.0.0.1"
+                proto = inner.get("proto") or inner.get("protocol") or inner.get("layer") or "TCP"
+                length = inner.get("len") or inner.get("length") or inner.get("size") or inner.get("bytes") or 64
+                info = inner.get("info") or inner.get("summary") or inner.get("desc") or inner.get("description") or f"{proto} Packet {length} bytes"
+
+                normalized = {
+                    "num": int(num) if str(num).isdigit() else count,
+                    "time": str(pkt_time),
+                    "src": str(src),
+                    "dst": str(dst),
+                    "proto": str(proto).upper(),
+                    "len": int(length) if str(length).isdigit() else 64,
+                    "info": str(info)
+                }
+
+                # Evaluate live packet against Suricata/Snort Rules in rules.py
+                nids_alerts = default_rule_engine.inspect_packet(normalized)
+                if nids_alerts:
+                    ws.send(json.dumps({"type": "NIDS_ALERT", "alerts": nids_alerts}))
+
+                ws.send(json.dumps({"type": "PACKET", "packet": normalized}))
+            except queue.Empty:
+                continue
+            except Exception:
+                break
+
+    while True:
+        try:
+            raw_data = ws.receive()
+            if not raw_data:
+                break
+
+            payload = json.loads(raw_data)
+            action = payload.get("action", "START_CAPTURE")
+
+            if action == "START_CAPTURE":
+                interface = payload.get("interface")
+                if not interface or interface in ["any", "All", "Default Adapter", "default"]:
+                    interface = None
+                display_filter = payload.get("filter", "").strip()
+
+                if stop_event.is_set():
+                    stop_event.clear()
+                    packet_queue.queue.clear()
+
+                    sniffer_thread = threading.Thread(
+                        target=WiresharkEngine.capture_packets_sync,
+                        args=(interface, 0, packet_queue, stop_event, display_filter if display_filter else None),
+                        daemon=True
+                    )
+                    sniffer_thread.start()
+
+                    sender_thread = threading.Thread(target=socket_drain_loop, daemon=True)
+                    sender_thread.start()
+
+            elif action == "STOP_CAPTURE":
+                stop_event.set()
+                ws.send(json.dumps({"type": "CAPTURE_STOPPED"}))
+
+        except ConnectionClosed:
+            stop_event.set()
+            break
+        except Exception:
+            stop_event.set()
+            break
 
 @app.route("/api/wireshark/export-pcap", methods=["GET"])
 def export_captured_pcap():
-    """Generates and downloads the active packet buffer as a standard .pcap file."""
     try:
         pcap_stream = WiresharkEngine.export_pcap_bytes()
         filename = f"secur_capture_{int(time.time())}.pcap"
@@ -395,33 +532,30 @@ def export_captured_pcap():
         return jsonify({"status": "error", "message": f"PCAP Export Failed: {str(e)}"}), 500
 
 # ==========================================
-# 7. VAPT EXECUTIVE REPORT EXPORT ENDPOINTS
+# 8. VAPT EXECUTIVE REPORT EXPORT ENDPOINTS
 # ==========================================
 
 @app.route("/api/reports/export-universal", methods=["POST"])
 def export_universal_vapt_report():
-    """Universal endpoint accepting data from Nmap, Nuclei, FFUF, or full Dashboard."""
     data = request.get_json() or {}
     target = data.get("target", "127.0.0.1")
-    nmap_data = data.get("nmap_data", {})
-    nuclei_data = data.get("nuclei_data", [])
-    fuzz_data = data.get("fuzz_data", [])
-    ai_analysis = data.get("ai_analysis", "")
+    tool = data.get("tool", "General")
+    tool_data = data.get("data", [])
     output_format = data.get("format", "html")
 
     content = ReportGenerator.generate_unified_vapt_report(
         target=target,
-        nmap_data=nmap_data,
-        nuclei_data=nuclei_data,
-        fuzz_data=fuzz_data,
-        ai_analysis=ai_analysis,
+        nmap_data=tool_data if tool == "Nmap" else {},
+        nuclei_data=tool_data if tool == "Nuclei" else [],
+        fuzz_data=tool_data if tool == "Fuzzer" else [],
+        ai_analysis=data.get("ai_analysis", f"SecurOS Unified Report for {tool}"),
         output_format=output_format
     )
 
     mem_file = io.BytesIO(content.encode("utf-8"))
     ext = "html" if output_format == "html" else "md"
     mimetype = "text/html" if output_format == "html" else "text/markdown"
-    filename = f"SecurOS_VAPT_Report_{target.replace('/', '_')}_{int(time.time())}.{ext}"
+    filename = f"SecurOS_{tool}_Report_{int(time.time())}.{ext}"
 
     return send_file(
         mem_file,
@@ -429,88 +563,6 @@ def export_universal_vapt_report():
         as_attachment=True,
         download_name=filename
     )
-
-@app.route("/api/reports/export-markdown", methods=["POST"])
-def export_vapt_markdown():
-    data = request.get_json() or {}
-    target = data.get("target", "127.0.0.1")
-    scan_data = data.get("scan_data", {})
-    ai_analysis = data.get("ai_analysis", "")
-
-    md_content = ReportGenerator.generate_vapt_markdown(target, scan_data, ai_analysis)
-    mem_file = io.BytesIO(md_content.encode("utf-8"))
-    filename = f"VAPT_Report_{target.replace('/', '_')}_{int(time.time())}.md"
-    return send_file(mem_file, mimetype="text/markdown", as_attachment=True, download_name=filename)
-
-@app.route("/api/reports/export-html", methods=["POST"])
-def export_vapt_html():
-    data = request.get_json() or {}
-    target = data.get("target", "127.0.0.1")
-    scan_data = data.get("scan_data", {})
-    ai_analysis = data.get("ai_analysis", "")
-
-    html_content = ReportGenerator.generate_vapt_html(target, scan_data, ai_analysis)
-    mem_file = io.BytesIO(html_content.encode("utf-8"))
-    filename = f"VAPT_Audit_{target.replace('/', '_')}_{int(time.time())}.html"
-    return send_file(mem_file, mimetype="text/html", as_attachment=True, download_name=filename)
-
-# ==========================================
-# 8. LIVE WEBSOCKET PACKET CAPTURE STREAM
-# ==========================================
-
-@sock.route("/ws/wireshark")
-def websocket_wireshark_endpoint(ws):
-    packet_queue = queue.Queue(maxsize=20000)
-    stop_event = threading.Event()
-    stop_event.set()
-
-    def socket_drain_loop():
-        while not stop_event.is_set():
-            try:
-                packet_data = packet_queue.get(timeout=0.1)
-                ws.send(json.dumps(packet_data))
-            except queue.Empty:
-                continue
-            except Exception:
-                break
-
-    while True:
-        try:
-            raw_data = ws.receive()
-            if not raw_data:
-                break
-                
-            payload = json.loads(raw_data)
-            action = payload.get("action")
-            
-            if action == "START_CAPTURE":
-                interface = payload.get("interface", "any")
-                display_filter = payload.get("filter", "").strip()
-                
-                if stop_event.is_set():
-                    stop_event.clear()
-                    packet_queue.queue.clear()
-                    
-                    sniffer_thread = threading.Thread(
-                        target=WiresharkEngine.capture_packets_sync,
-                        args=(interface, 0, packet_queue, stop_event, display_filter if display_filter else None),
-                        daemon=True
-                    )
-                    sniffer_thread.start()
-                    
-                    sender_thread = threading.Thread(target=socket_drain_loop, daemon=True)
-                    sender_thread.start()
-                    
-            elif action == "STOP_CAPTURE":
-                stop_event.set()
-                ws.send(json.dumps({"type": "CAPTURE_STOPPED"}))
-                
-        except ConnectionClosed:
-            stop_event.set()
-            break
-        except Exception:
-            stop_event.set()
-            break
 
 # ==========================================
 # 9. WEBSOCKET ENDPOINTS FOR FFUF & NUCLEI
@@ -524,24 +576,33 @@ def websocket_fuzzer_endpoint(ws):
             if not raw_data:
                 break
             payload = json.loads(raw_data)
-            if payload.get("action") == "RUN_FUZZ":
-                target = payload.get("target", "http://127.0.0.1:8000/FUZZ")
-                wordlist = payload.get("wordlist")
+            target = payload.get("url") or payload.get("target", "http://127.0.0.1:8000/FUZZ")
+            wordlist = payload.get("wordlist")
 
-                def run_fuzz_loop():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    async def run():
-                        try:
-                            async for event in FfufEngine.execute_fuzz_stream(target, wordlist):
+            def run_fuzz_loop():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                async def run():
+                    try:
+                        async for event in FfufEngine.execute_fuzz_stream(target, wordlist):
+                            if isinstance(event, dict):
+                                r_data = event.get("data") or event.get("route") or event
+                                normalized_route = {
+                                    "url": r_data.get("url") or r_data.get("path") or target.replace("FUZZ", str(r_data.get("input", ""))),
+                                    "status": r_data.get("status") or r_data.get("status_code") or r_data.get("code") or 200,
+                                    "length": r_data.get("length") or r_data.get("size") or r_data.get("len") or 0
+                                }
+                                ws.send(json.dumps({"type": "ROUTE_DISCOVERED", "data": normalized_route}))
+                            else:
                                 ws.send(json.dumps(event))
-                        except Exception as e:
-                            ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Error: {str(e)}"}))
-                            ws.send(json.dumps({"type": "FUZZ_COMPLETE", "payload": {"status": "error"}}))
-                    new_loop.run_until_complete(run())
-                    new_loop.close()
+                    except Exception as e:
+                        ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Fuzzer Notice: {str(e)}"}))
+                    finally:
+                        ws.send(json.dumps({"type": "FUZZ_COMPLETE"}))
+                new_loop.run_until_complete(run())
+                new_loop.close()
 
-                threading.Thread(target=run_fuzz_loop, daemon=True).start()
+            threading.Thread(target=run_fuzz_loop, daemon=True).start()
         except ConnectionClosed:
             break
         except Exception:
@@ -555,24 +616,33 @@ def websocket_nuclei_endpoint(ws):
             if not raw_data:
                 break
             payload = json.loads(raw_data)
-            if payload.get("action") == "RUN_NUCLEI":
-                target = payload.get("target")
-                severity = payload.get("severity")
+            target = payload.get("target", "http://127.0.0.1:8000")
+            severity = payload.get("severity") or payload.get("templates", "cves,vulnerabilities")
 
-                def run_nuclei_loop():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    async def run():
-                        try:
-                            async for event in NucleiEngine.execute_nuclei_stream(target, severity):
+            def run_nuclei_loop():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                async def run():
+                    try:
+                        async for event in NucleiEngine.execute_nuclei_stream(target, severity):
+                            if isinstance(event, dict):
+                                f_data = event.get("data") or event.get("finding") or event
+                                normalized_finding = {
+                                    "template": f_data.get("template") or f_data.get("template_id") or f_data.get("id") or f_data.get("name") or "CVE-Generic",
+                                    "severity": (f_data.get("severity") or f_data.get("level") or "Medium").capitalize(),
+                                    "url": f_data.get("url") or f_data.get("matched") or f_data.get("host") or target
+                                }
+                                ws.send(json.dumps({"type": "FINDING", "data": normalized_finding}))
+                            else:
                                 ws.send(json.dumps(event))
-                        except Exception as e:
-                            ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Error: {str(e)}"}))
-                            ws.send(json.dumps({"type": "NUCLEI_COMPLETE", "payload": {"status": "error"}}))
-                    new_loop.run_until_complete(run())
-                    new_loop.close()
+                    except Exception as e:
+                        ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Nuclei Notice: {str(e)}"}))
+                    finally:
+                        ws.send(json.dumps({"type": "NUCLEI_COMPLETE"}))
+                new_loop.run_until_complete(run())
+                new_loop.close()
 
-                threading.Thread(target=run_nuclei_loop, daemon=True).start()
+            threading.Thread(target=run_nuclei_loop, daemon=True).start()
         except ConnectionClosed:
             break
         except Exception:
