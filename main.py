@@ -39,6 +39,15 @@ jarvis = JarvisEngine()
 # HTTP SECURITY HEADERS & CORS MIDDLEWARE
 # ==========================================
 
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = Response(status=200)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+        return response
+
 @app.after_request
 def set_security_headers(response):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -196,8 +205,11 @@ def get_firestore_history():
 # 4. SECUROS & JARVIS AI DUAL REST API ENDPOINTS
 # ==========================================
 
-@app.route("/api/assistant/chat", methods=["POST"])
+@app.route("/api/assistant/chat", methods=["POST", "OPTIONS"])
 def assistant_chat_api():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     payload = request.get_json() or {}
     query = payload.get("query", "").strip()
     if not query:
@@ -208,16 +220,22 @@ def assistant_chat_api():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/api/assistant/explain-scan", methods=["POST"])
+@app.route("/api/assistant/explain-scan", methods=["POST", "OPTIONS"])
 def explain_scan():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     payload = request.get_json() or {}
     tool = payload.get("tool", "Nmap")
     data = payload.get("data", {})
     explanation = sec_assistant.explain_scan_telemetry(tool, data)
     return jsonify({"status": "success", "explanation": explanation})
 
-@app.route("/api/jarvis/stream", methods=["POST"])
+@app.route("/api/jarvis/stream", methods=["POST", "OPTIONS"])
 def jarvis_stream_api():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     data = request.get_json() or {}
     user_query = data.get("prompt") or data.get("query", "")
     history = data.get("history", [])
@@ -243,8 +261,11 @@ def text_to_bits(text):
         bits.extend([int(b) for b in bin_char])
     return bits
 
-@app.route("/api/steg/encode", methods=["POST"])
+@app.route("/api/steg/encode", methods=["POST", "OPTIONS"])
 def encode_steganography():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     file = request.files.get('file') or request.files.get('image')
     message = request.form.get('message', '')
 
@@ -286,8 +307,11 @@ def encode_steganography():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Encoding failure: {str(e)}"}), 500
 
-@app.route("/api/steg/decode", methods=["POST"])
+@app.route("/api/steg/decode", methods=["POST", "OPTIONS"])
 def decode_steganography():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     file = request.files.get('file') or request.files.get('image')
     if not file:
         return jsonify({"status": "error", "message": "No file uploaded."}), 400
@@ -312,8 +336,11 @@ def decode_steganography():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Decoding failure: {str(e)}"}), 500
 
-@app.route("/api/steg/analyze-plane", methods=["POST"])
+@app.route("/api/steg/analyze-plane", methods=["POST", "OPTIONS"])
 def analyze_bit_plane():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     file = request.files.get('file') or request.files.get('image')
     plane = int(request.form.get('plane', 0))
     if not file:
@@ -535,8 +562,11 @@ def export_captured_pcap():
 # 8. VAPT EXECUTIVE REPORT EXPORT ENDPOINTS
 # ==========================================
 
-@app.route("/api/reports/export-universal", methods=["POST"])
+@app.route("/api/reports/export-universal", methods=["POST", "OPTIONS"])
 def export_universal_vapt_report():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
     data = request.get_json() or {}
     target = data.get("target", "127.0.0.1")
     tool = data.get("tool", "General")
