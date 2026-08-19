@@ -1,21 +1,55 @@
-// Resolve Backend Base URL:
-// 1. Uses VITE_BACKEND_URL set in Vercel environment variables
-// 2. Falls back to window.location.origin if served directly by Flask
-// 3. Defaults to http://127.0.0.1:8000 during local Vite development
+// Resolve Backend Base URL
 const getBackendUrl = (): string => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL.replace(/\/$/, "");
   }
-  if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
-    return window.location.origin;
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return "http://127.0.0.1:8000";
   }
-  return "http://127.0.0.1:8000";
+  return "https://securos-backend.onrender.com";
 };
 
 export const API_BASE = getBackendUrl();
-
-// Dynamically construct secure WebSocket base URL (wss:// for HTTPS, ws:// for HTTP)
 export const WS_BASE = API_BASE.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
+
+/**
+ * Universal File Downloader
+ */
+export function triggerFileDownload(blobOrText: Blob | string, fileName: string, mimeType: string = "text/plain") {
+  const blob = typeof blobOrText === "string" ? new Blob([blobOrText], { type: mimeType }) : blobOrText;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Security Assistant Desk Chat API
+ */
+export async function queryAssistant(query: string): Promise<string> {
+  try {
+    const res = await fetch(`${API_BASE}/api/assistant/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Server returned status ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    return data.answer || "No response received from Assistant.";
+  } catch (err: any) {
+    console.error("[!] Assistant Desk Error:", err);
+    throw err;
+  }
+}
 
 /**
  * Universal VAPT Report Exporter (HTML / Markdown)
@@ -33,14 +67,7 @@ export async function exportReport(tool: string, data: any, format: "html" | "ma
     }
 
     const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `SecurOS_${tool}_Report.${format === "html" ? "html" : "md"}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+    triggerFileDownload(blob, `SecurOS_${tool}_Report.${format === "html" ? "html" : "md"}`, format === "html" ? "text/html" : "text/markdown");
   } catch (err: any) {
     console.error("[!] Report Export Error:", err);
     alert(`Failed to export ${tool} report: ${err.message}`);

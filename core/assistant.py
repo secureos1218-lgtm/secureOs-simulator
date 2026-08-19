@@ -36,10 +36,16 @@ FALLBACK_KNOWLEDGE_MAP = {
 * Ensure regulatory compliance with ISO 27001, PCI-DSS, and SOC 2.""",
     
     "owasp": """### OWASP Top 10 Core Security Controls
-* **A01: Broken Access Control**: Enforce strict server-side authorization on every endpoint.
+* **A01: Broken Access Control**: Enforce strict server-side authorization checks on every endpoint.
 * **A02: Cryptographic Failures**: Mandate TLS 1.3 in transit and strong algorithms (Argon2id, AES-GCM) at rest.
 * **A03: Injection (SQLi/XSS/Command)**: Utilize parameterized queries, ORM abstractions, and output encoding.
-* **A04: Insecure Design**: Apply threat modeling and secure architecture frameworks before coding.""",
+* **A04: Insecure Design**: Apply threat modeling and secure architecture frameworks before coding.
+* **A05: Security Misconfiguration**: Disable default credentials, remove unused features, and harden headers.
+* **A06: Vulnerable and Outdated Components**: Maintain continuous dependency scans (SBOM, Dependabot).
+* **A07: Identification and Authentication Failures**: Enforce MFA and rate-limit authentication endpoints.
+* **A08: Software and Data Integrity Failures**: Validate digital signatures on plugins and CI/CD pipelines.
+* **A09: Security Logging and Monitoring Failures**: Centralize audit logs into a SIEM with alerting rules.
+* **A10: Server-Side Request Forgery (SSRF)**: Enforce strict URL allowlists and isolate internal cloud metadata services.""",
     
     "active directory": """### Active Directory Hardening & Defense
 * **Kerberoasting Defense**: Migrate service accounts to Group Managed Service Accounts (gMSA) with 128-bit AES keys.
@@ -76,6 +82,15 @@ class SecurityAssistant:
             except Exception:
                 pass
 
+    def seed_knowledge_base(self, documents: list, metadatas: list, ids: list):
+        """Indexes knowledge base documents into ChromaDB for RAG context retrieval."""
+        if self.kb_collection:
+            try:
+                self.kb_collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
+                print(f"[+] Seeded {len(ids)} knowledge base items into ChromaDB.")
+            except Exception as e:
+                print(f"[!] Error seeding ChromaDB: {str(e)}")
+
     def _get_static_fallback(self, query: str, rag_context: str = "") -> str:
         q = query.lower()
         for key, val in FALLBACK_KNOWLEDGE_MAP.items():
@@ -99,7 +114,7 @@ class SecurityAssistant:
                     config = types.GenerateContentConfig(
                         system_instruction=system_prompt,
                         temperature=0.2,
-                        max_output_tokens=1500
+                        max_output_tokens=3000
                     )
                     response = self.ai_client.models.generate_content(
                         model=model_id,
@@ -116,7 +131,7 @@ class SecurityAssistant:
     def explain_scan_telemetry(self, tool_type: str, scan_data: dict) -> str:
         system_prompt = (
             "You are an expert SOC Analyst in SecurOS. "
-            "Quickly summarize the vulnerability, CVSS score, and provide 1-2 exact CLI remediation commands."
+            "Quickly summarize the vulnerability, CVSS score, and provide exact CLI remediation commands."
         )
         prompt = f"Tool: {tool_type}\nRaw Telemetry Data:\n{scan_data}\n\nProvide rapid threat breakdown and remediation."
         return self._call_gemini_fast(prompt, system_prompt, user_query=tool_type)
@@ -129,7 +144,7 @@ class SecurityAssistant:
             try:
                 results = self.kb_collection.query(
                     query_texts=[user_query],
-                    n_results=2
+                    n_results=3
                 )
                 if results and 'documents' in results and results['documents']:
                     retrieved_docs = results['documents'][0]
@@ -145,7 +160,7 @@ class SecurityAssistant:
         context_str = "\n".join(context_blocks) if context_blocks else ""
 
         system_prompt = (
-            "You are the SecurOS AI Security Assistant. Answer cybersecurity questions concisely, "
+            "You are the SecurOS AI Security Assistant. Answer cybersecurity questions comprehensively, "
             "with precise technical depth, structured headers, and CLI/defensive controls. "
             "Use the provided internal knowledge context when relevant."
         )

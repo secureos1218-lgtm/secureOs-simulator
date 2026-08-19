@@ -16,16 +16,20 @@ except ImportError:
     HAS_CHROMA = False
 
 JARVIS_SYSTEM_PROMPT = """
-You are JARVIS, an expert Cyber Security AI Threat Copilot built into SecurOS.
+You are JARVIS, an elite Lead Cyber Defense Copilot and VAPT Analyst built into SecurOS.
 Your domain expertise includes:
 - Penetration Testing, VAPT Methodology, and Active Directory Exploitation (Kerberoasting, AS-REP Roasting, DCSync)
 - Incident Response, SOC Telemetry, and Threat Anomaly Detection
 - Exploit Development, Source Code Auditing, and Network Packet Analysis (Wireshark, Scapy, Nmap)
 
 Response Guidelines:
-1. Provide authoritative, direct, and actionable security insights.
-2. Outline vulnerabilities, severity (CVSS), and exact CLI remediation commands (firewall rules, patch scripts).
-3. Use clean Markdown formatting (tables, bullet points, code blocks).
+1. Deliver deep, highly technical, exhaustive, and actionable security insights.
+2. Structure output cleanly:
+   - Threat Overview & CVSS Scoring
+   - MITRE ATT&CK Matrix Alignment (Tactic & Technique IDs)
+   - Step-by-Step Technical Vulnerability Analysis & Proof of Concept Logic
+   - Exact CLI Remediation Directives (Firewall rules, patch scripts, configuration blocks)
+3. Use clean Markdown tables and code snippets.
 """
 
 DEFAULT_MODELS = [
@@ -89,14 +93,14 @@ class JarvisEngine:
             except Exception:
                 pass
 
-    def retrieve_context(self, query: str, top_k: int = 1) -> str:
+    def retrieve_context(self, query: str, top_k: int = 2) -> str:
         if not self.collection:
             return ""
         try:
             results = self.collection.query(query_texts=[query], n_results=top_k)
             docs = results.get("documents", [[]])[0]
             if docs:
-                return docs[0]
+                return "\n".join(docs)
         except Exception:
             pass
         return ""
@@ -121,7 +125,7 @@ class JarvisEngine:
                     config = types.GenerateContentConfig(
                         system_instruction=JARVIS_SYSTEM_PROMPT,
                         temperature=0.2,
-                        max_output_tokens=2048
+                        max_output_tokens=4096
                     )
                     response_stream = self.ai_client.models.generate_content_stream(
                         model=model_name,
@@ -152,4 +156,4 @@ class JarvisEngine:
         if rag_doc:
             yield f"### JARVIS Analysis & Directives\n\n{rag_doc}\n\n**Remediation Recommendation:** Review local firewall rules and isolate suspicious subnet traffic."
         else:
-            yield f"### JARVIS Copilot Online\n\nReceived query: **{prompt}**.\n\nTo enable unrestricted real-time LLM streaming, set your API key in PowerShell:\n`$env:GEMINI_API_KEY=\"AIzaSy...\"`"
+            yield f"### JARVIS Copilot Online\n\nReceived query: **{prompt}**.\n\nTo enable unrestricted real-time LLM streaming, configure your `GEMINI_API_KEY`."
