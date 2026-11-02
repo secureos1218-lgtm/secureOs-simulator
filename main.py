@@ -119,62 +119,16 @@ def index():
 
 @app.get("/api/wireshark/interfaces")
 def get_network_interfaces():
-    adapters = []
     try:
-        io_counters = psutil.net_io_counters(pernic=True) if hasattr(psutil, "net_io_counters") else {}
-        addrs = psutil.net_if_addrs() if hasattr(psutil, "net_if_addrs") else {}
-        stats = psutil.net_if_stats() if hasattr(psutil, "net_if_stats") else {}
-
-        for nic_name, addr_list in addrs.items():
-            ipv4 = "Unassigned"
-            for a in addr_list:
-                if getattr(a, "family", None) == socket.AF_INET:
-                    ipv4 = a.address
-                    break
-
-            nic_stats = stats.get(nic_name)
-            is_up = nic_stats.isup if nic_stats else True
-            counters = io_counters.get(nic_name)
-            bytes_sent = counters.bytes_sent if counters else 0
-            bytes_recv = counters.bytes_recv if counters else 0
-
-            is_live = is_up and (bytes_sent + bytes_recv > 0) and ipv4 not in ["Unassigned", "127.0.0.1"]
-
-            adapters.append({
-                "id": nic_name,
-                "name": nic_name,
-                "ip": ipv4,
-                "is_up": is_up,
-                "is_live": is_live,
-                "bytes_recv": bytes_recv,
-                "bytes_sent": bytes_sent
-            })
-
-        if not adapters:
-            hostname = socket.gethostname()
-            local_ip = socket.gethostbyname(hostname)
-            adapters = [
-                {"id": "Default Adapter", "name": "Primary Adapter", "ip": local_ip, "is_up": True, "is_live": True, "bytes_recv": 1024, "bytes_sent": 1024},
-                {"id": "Loopback", "name": "Loopback (127.0.0.1)", "ip": "127.0.0.1", "is_up": True, "is_live": False, "bytes_recv": 0, "bytes_sent": 0}
-            ]
-
-        adapters.sort(key=lambda x: (not x["is_live"], not x["is_up"], x["name"]))
+        adapters = WiresharkEngine.get_interfaces()
         return jsonify({"status": "success", "interfaces": adapters})
-
     except Exception as e:
-        hostname = socket.gethostname()
-        try:
-            local_ip = socket.gethostbyname(hostname)
-        except Exception:
-            local_ip = "127.0.0.1"
-
         return jsonify({
-            "status": "success",
+            "status": "error",
+            "message": str(e),
             "interfaces": [
-                {"id": "Default Adapter", "name": "Default Network Adapter", "ip": local_ip, "is_up": True, "is_live": True, "bytes_recv": 100, "bytes_sent": 100},
-                {"id": "127.0.0.1", "name": "Loopback", "ip": "127.0.0.1", "is_up": True, "is_live": False, "bytes_recv": 0, "bytes_sent": 0}
-            ],
-            "warning": str(e)
+                {"id": "Default Adapter", "name": "Default Network Adapter", "ip": "127.0.0.1", "is_up": True, "is_live": True, "bytes_recv": 100, "bytes_sent": 100}
+            ]
         })
 
 # ==========================================
@@ -228,7 +182,7 @@ def explain_scan():
     payload = request.get_json() or {}
     tool = payload.get("tool", "Nmap")
     data = payload.get("data", {})
-    explanation = sec_assistant.explain_scan_telemetry(tool, data)
+    explanation = jarvis.analyze(f"Analyze the {tool} scan findings and provide internal and external remediations.", telemetry_data=data)
     return jsonify({"status": "success", "explanation": explanation})
 
 @app.route("/api/jarvis/stream", methods=["POST", "OPTIONS"])
@@ -424,7 +378,7 @@ def websocket_nmap_endpoint(ws):
 
             if action == "RUN_NMAP" or ("target" in payload and action not in ["STOP_SCAN", "CANCEL_SCAN"]):
                 target = payload.get("target", "127.0.0.1").strip()
-                profile = payload.get("flags") or payload.get("profile", "-T4 -F")
+                profile = payload.get("profile") or payload.get("flags", "-T4 -F")
                 custom_ports = payload.get("custom_ports") or payload.get("ports", "1-1000")
 
                 scan_thread = threading.Thread(
@@ -444,7 +398,7 @@ def websocket_nmap_endpoint(ws):
                 }))
                 ws.send(json.dumps({
                     "type": "SCAN_COMPLETE",
-                    "payload": {"target": "", "status": "cancelled", "summary": "Cancelled", "ports": []}
+                    "payload": {"target": "", "status": "cancelled", "summary": "Scan aborted by user.", "ports": []}
                 }))
 
         except ConnectionClosed:
@@ -469,36 +423,59 @@ def websocket_wireshark_endpoint(ws):
         while not stop_event.is_set():
             try:
                 raw_pkt = packet_queue.get(timeout=0.1)
-                if isinstance(raw_pkt, dict):
-                    inner = raw_pkt.get("packet") or raw_pkt.get("data") or raw_pkt.get("payload") or raw_pkt
-                else:
-                    inner = {}
+                if not isinstance(raw_pkt, dict):
+                    continue
 
-                count += 1
-                num = inner.get("num") or inner.get("number") or inner.get("no") or inner.get("id") or count
-                pkt_time = inner.get("time") or inner.get("timestamp") or inner.get("ts") or time.strftime("%H:%M:%S")
-                src = inner.get("src") or inner.get("source") or inner.get("src_ip") or inner.get("ip_src") or inner.get("source_ip") or "127.0.0.1"
-                dst = inner.get("dst") or inner.get("destination") or inner.get("dst_ip") or inner.get("ip_dst") or inner.get("destination_ip") or "127.0.0.1"
-                proto = inner.get("proto") or inner.get("protocol") or inner.get("layer") or "TCP"
-                length = inner.get("len") or inner.get("length") or inner.get("size") or inner.get("bytes") or 64
-                info = inner.get("info") or inner.get("summary") or inner.get("desc") or inner.get("description") or f"{proto} Packet {length} bytes"
+                msg_type = raw_pkt.get("type")
 
-                normalized = {
-                    "num": int(num) if str(num).isdigit() else count,
-                    "time": str(pkt_time),
-                    "src": str(src),
-                    "dst": str(dst),
-                    "proto": str(proto).upper(),
-                    "len": int(length) if str(length).isdigit() else 64,
-                    "info": str(info)
-                }
+                if msg_type == "CAPTURE_STARTED":
+                    ws.send(json.dumps({"type": "CAPTURE_STARTED"}))
+                    continue
 
-                # Evaluate live packet against Suricata/Snort Rules in rules.py
-                nids_alerts = default_rule_engine.inspect_packet(normalized)
-                if nids_alerts:
-                    ws.send(json.dumps({"type": "NIDS_ALERT", "alerts": nids_alerts}))
+                if msg_type == "CAPTURE_ERROR":
+                    ws.send(json.dumps({
+                        "type": "CAPTURE_ERROR",
+                        "message": raw_pkt.get("message", "Network interface capture notice.")
+                    }))
+                    continue
 
-                ws.send(json.dumps({"type": "PACKET", "packet": normalized}))
+                if msg_type == "CAPTURE_COMPLETE":
+                    ws.send(json.dumps({"type": "CAPTURE_COMPLETE"}))
+                    continue
+
+                if msg_type == "PACKET_ROW":
+                    inner = raw_pkt.get("data") or raw_pkt.get("packet") or {}
+                    count += 1
+                    num = inner.get("num") or inner.get("number") or count
+                    pkt_time = inner.get("time") or time.strftime("%H:%M:%S")
+                    src = inner.get("src") or inner.get("source") or "127.0.0.1"
+                    dst = inner.get("dst") or inner.get("destination") or "127.0.0.1"
+                    proto = inner.get("proto") or inner.get("protocol") or "TCP"
+                    length = inner.get("len") or inner.get("length") or 64
+                    info = inner.get("info") or f"{proto} Packet"
+
+                    normalized = {
+                        "num": int(num) if str(num).isdigit() else count,
+                        "time": str(pkt_time),
+                        "src": str(src),
+                        "dst": str(dst),
+                        "proto": str(proto).upper(),
+                        "len": int(length) if str(length).isdigit() else 64,
+                        "info": str(info),
+                        "trees": inner.get("trees"),
+                        "hex": inner.get("hex"),
+                        "intel": inner.get("intel"),
+                    }
+
+                    # Evaluate live packet against Suricata/Snort Rules in rules.py
+                    try:
+                        nids_alerts = default_rule_engine.inspect_packet(normalized)
+                        if nids_alerts:
+                            ws.send(json.dumps({"type": "NIDS_ALERT", "alerts": nids_alerts}))
+                    except Exception as e:
+                        print(f"[!] NIDS rule evaluation notice: {e}")
+
+                    ws.send(json.dumps({"type": "PACKET", "packet": normalized}))
             except queue.Empty:
                 continue
             except Exception:
@@ -515,8 +492,6 @@ def websocket_wireshark_endpoint(ws):
 
             if action == "START_CAPTURE":
                 interface = payload.get("interface")
-                if not interface or interface in ["any", "All", "Default Adapter", "default"]:
-                    interface = None
                 display_filter = payload.get("filter", "").strip()
 
                 if stop_event.is_set():
@@ -615,18 +590,25 @@ def websocket_fuzzer_endpoint(ws):
                 async def run():
                     try:
                         async for event in FfufEngine.execute_fuzz_stream(target, wordlist):
-                            if isinstance(event, dict):
-                                r_data = event.get("data") or event.get("route") or event
+                            if not isinstance(event, dict):
+                                continue
+                            evt_type = event.get("type")
+                            if evt_type == "FUZZ_RESULT":
+                                r_data = event.get("data", {})
                                 normalized_route = {
-                                    "url": r_data.get("url") or r_data.get("path") or target.replace("FUZZ", str(r_data.get("input", ""))),
-                                    "status": r_data.get("status") or r_data.get("status_code") or r_data.get("code") or 200,
-                                    "length": r_data.get("length") or r_data.get("size") or r_data.get("len") or 0
+                                    "url": r_data.get("url") or target,
+                                    "status": int(r_data.get("status", 200)),
+                                    "length": int(r_data.get("length", 0))
                                 }
                                 ws.send(json.dumps({"type": "ROUTE_DISCOVERED", "data": normalized_route}))
+                            elif evt_type == "TERMINAL_LINE":
+                                ws.send(json.dumps(event))
+                            elif evt_type == "FUZZ_COMPLETE":
+                                ws.send(json.dumps(event))
                             else:
                                 ws.send(json.dumps(event))
                     except Exception as e:
-                        ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Fuzzer Notice: {str(e)}"}))
+                        ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Fuzzer Notice: {str(e)}\n"}))
                     finally:
                         ws.send(json.dumps({"type": "FUZZ_COMPLETE"}))
                 new_loop.run_until_complete(run())
@@ -647,7 +629,7 @@ def websocket_nuclei_endpoint(ws):
                 break
             payload = json.loads(raw_data)
             target = payload.get("target", "http://127.0.0.1:8000")
-            severity = payload.get("severity") or payload.get("templates", "cves,vulnerabilities")
+            severity = payload.get("severity") or payload.get("templates", "all")
 
             def run_nuclei_loop():
                 new_loop = asyncio.new_event_loop()
@@ -655,18 +637,27 @@ def websocket_nuclei_endpoint(ws):
                 async def run():
                     try:
                         async for event in NucleiEngine.execute_nuclei_stream(target, severity):
-                            if isinstance(event, dict):
-                                f_data = event.get("data") or event.get("finding") or event
+                            if not isinstance(event, dict):
+                                continue
+                            evt_type = event.get("type")
+                            if evt_type == "NUCLEI_FINDING":
+                                f_data = event.get("data", {})
                                 normalized_finding = {
-                                    "template": f_data.get("template") or f_data.get("template_id") or f_data.get("id") or f_data.get("name") or "CVE-Generic",
-                                    "severity": (f_data.get("severity") or f_data.get("level") or "Medium").capitalize(),
-                                    "url": f_data.get("url") or f_data.get("matched") or f_data.get("host") or target
+                                    "template": f_data.get("template_id") or f_data.get("name") or "CVE-Finding",
+                                    "name": f_data.get("name") or "Vulnerability Identified",
+                                    "severity": (f_data.get("severity") or "Medium").capitalize(),
+                                    "url": f_data.get("matched_at") or target,
+                                    "description": f_data.get("description", "")
                                 }
                                 ws.send(json.dumps({"type": "FINDING", "data": normalized_finding}))
+                            elif evt_type == "TERMINAL_LINE":
+                                ws.send(json.dumps(event))
+                            elif evt_type == "NUCLEI_COMPLETE":
+                                ws.send(json.dumps(event))
                             else:
                                 ws.send(json.dumps(event))
                     except Exception as e:
-                        ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Nuclei Notice: {str(e)}"}))
+                        ws.send(json.dumps({"type": "TERMINAL_LINE", "text": f"[!] Nuclei Engine Notice: {str(e)}\n"}))
                     finally:
                         ws.send(json.dumps({"type": "NUCLEI_COMPLETE"}))
                 new_loop.run_until_complete(run())

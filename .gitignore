@@ -118,3 +118,5 @@ htmlcov/
 ehthumbs.db
 Thumbs.db
 desktop.ini
+
+temp_scan_*.xml

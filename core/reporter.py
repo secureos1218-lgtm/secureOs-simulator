@@ -16,9 +16,16 @@ class ReportGenerator:
         FFUF, and JARVIS AI Threat Intelligence.
         """
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-        nmap_ports = (nmap_data or {}).get("ports", [])
-        nuclei_findings = nuclei_data or []
-        fuzz_findings = fuzz_data or []
+
+        if isinstance(nmap_data, dict):
+            nmap_ports = nmap_data.get("ports", [])
+        elif isinstance(nmap_data, list):
+            nmap_ports = nmap_data
+        else:
+            nmap_ports = []
+
+        nuclei_findings = nuclei_data if isinstance(nuclei_data, list) else []
+        fuzz_findings = fuzz_data if isinstance(fuzz_data, list) else []
 
         if output_format == "markdown":
             return ReportGenerator._build_unified_markdown(
@@ -32,14 +39,22 @@ class ReportGenerator:
     @staticmethod
     def generate_vapt_markdown(target: str, scan_data: dict, ai_analysis: str = "") -> str:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-        ports = (scan_data or {}).get("ports", [])
+        ports = (scan_data or {}).get("ports", []) if isinstance(scan_data, dict) else []
         return ReportGenerator._build_unified_markdown(target, timestamp, ports, [], [], ai_analysis)
 
     @staticmethod
     def generate_vapt_html(target: str, scan_data: dict, ai_analysis: str = "") -> str:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-        ports = (scan_data or {}).get("ports", [])
+        ports = (scan_data or {}).get("ports", []) if isinstance(scan_data, dict) else []
         return ReportGenerator._build_unified_html(target, timestamp, ports, [], [], ai_analysis)
+
+    @staticmethod
+    def _format_port_display(p: dict) -> str:
+        port_raw = str(p.get('port', '?'))
+        if "/" in port_raw:
+            return port_raw
+        proto = p.get('proto') or p.get('protocol') or 'tcp'
+        return f"{port_raw}/{proto}"
 
     @staticmethod
     def _build_unified_markdown(target, timestamp, ports, nuclei, fuzz, ai_analysis):
@@ -69,7 +84,8 @@ class ReportGenerator:
             lines.append("| *None* | *Closed/Filtered* | *N/A* | *No active ports detected* |")
         else:
             for p in ports:
-                lines.append(f"| `{p.get('port', '?')}/{p.get('proto', 'tcp')}` | `{(p.get('state', 'open')).upper()}` | `{p.get('service', 'unknown')}` | `{p.get('version', 'N/A') or 'N/A'}` |")
+                port_disp = ReportGenerator._format_port_display(p)
+                lines.append(f"| `{port_disp}` | `{(p.get('state', 'open')).upper()}` | `{p.get('service', 'unknown')}` | `{p.get('version', 'N/A') or 'N/A'}` |")
 
         lines.extend([
             "",
@@ -85,7 +101,10 @@ class ReportGenerator:
             lines.append("| *None* | *Clean* | *N/A* | *No automated vulnerabilities identified* |")
         else:
             for v in nuclei:
-                lines.append(f"| `{v.get('template_id', v.get('id', 'N/A'))}` | **{(v.get('severity') or 'info').upper()}** | `{v.get('matched_at', target)}` | {v.get('name', 'Identified via template')} |")
+                tmpl = v.get('template') or v.get('template_id') or v.get('id', 'N/A')
+                matched_url = v.get('url') or v.get('matched_at', target)
+                name = v.get('name', 'Identified via template')
+                lines.append(f"| `{tmpl}` | **{(v.get('severity') or 'info').upper()}** | `{matched_url}` | {name} |")
 
         lines.extend([
             "",
@@ -93,15 +112,15 @@ class ReportGenerator:
             "",
             "## 4. Exposed Web Routes & Endpoints (FFUF)",
             "",
-            "| Status Code | Route / URL | Response Size | Words |",
-            "| :--- | :--- | :--- | :--- |"
+            "| Status Code | Route / URL | Response Size |",
+            "| :--- | :--- | :--- |"
         ])
 
         if not fuzz:
-            lines.append("| *None* | *N/A* | *N/A* | *No hidden endpoints indexed* |")
+            lines.append("| *None* | *N/A* | *No hidden endpoints indexed* |")
         else:
             for f in fuzz:
-                lines.append(f"| `{f.get('status', '200')}` | `{f.get('url', f.get('path', ''))}` | `{f.get('length', 'N/A')} bytes` | `{f.get('words', '-')}` |")
+                lines.append(f"| `{f.get('status', '200')}` | `{f.get('url', f.get('path', ''))}` | `{f.get('length', 'N/A')} bytes` |")
 
         lines.extend([
             "",
@@ -124,7 +143,8 @@ class ReportGenerator:
     def _build_unified_html(target, timestamp, ports, nuclei, fuzz, ai_analysis):
         port_rows = ""
         for p in ports:
-            port_rows += f"<tr><td><code>{p.get('port', '?')}/{p.get('proto', 'tcp')}</code></td><td><span class='badge open'>{(p.get('state', 'open')).upper()}</span></td><td>{p.get('service', 'unknown')}</td><td>{p.get('version', 'N/A') or 'N/A'}</td></tr>"
+            port_disp = ReportGenerator._format_port_display(p)
+            port_rows += f"<tr><td><code>{html.escape(port_disp)}</code></td><td><span class='badge open'>{html.escape((p.get('state', 'open')).upper())}</span></td><td>{html.escape(str(p.get('service', 'unknown')))}</td><td>{html.escape(str(p.get('version', 'N/A') or 'N/A'))}</td></tr>"
         if not port_rows:
             port_rows = "<tr><td colspan='4' style='text-align:center;'>No open ports identified.</td></tr>"
 
@@ -132,13 +152,17 @@ class ReportGenerator:
         for v in nuclei:
             sev = (v.get('severity') or 'info').lower()
             badge_class = 'critical' if sev in ['critical', 'high'] else ('medium' if sev == 'medium' else 'open')
-            nuclei_rows += f"<tr><td><code>{v.get('template_id', v.get('id', 'N/A'))}</code></td><td><span class='badge {badge_class}'>{sev.upper()}</span></td><td><code>{v.get('matched_at', target)}</code></td></tr>"
+            tmpl = v.get('template') or v.get('template_id') or v.get('id', 'N/A')
+            matched_url = v.get('url') or v.get('matched_at', target)
+            name = v.get('name') or ''
+            name_text = f" - {name}" if name else ""
+            nuclei_rows += f"<tr><td><code>{html.escape(str(tmpl))}</code>{html.escape(name_text)}</td><td><span class='badge {badge_class}'>{html.escape(sev.upper())}</span></td><td><code>{html.escape(str(matched_url))}</code></td></tr>"
         if not nuclei_rows:
             nuclei_rows = "<tr><td colspan='3' style='text-align:center;'>No vulnerabilities flagged.</td></tr>"
 
         fuzz_rows = ""
         for f in fuzz:
-            fuzz_rows += f"<tr><td><code>{f.get('status', '200')}</code></td><td><code>{f.get('url', f.get('path', ''))}</code></td><td>{f.get('length', 'N/A')} B</td></tr>"
+            fuzz_rows += f"<tr><td><code>{html.escape(str(f.get('status', '200')))}</code></td><td><code>{html.escape(str(f.get('url', f.get('path', ''))))}</code></td><td>{html.escape(str(f.get('length', 'N/A')))} B</td></tr>"
         if not fuzz_rows:
             fuzz_rows = "<tr><td colspan='3' style='text-align:center;'>No hidden endpoints discovered.</td></tr>"
 
@@ -178,25 +202,37 @@ class ReportGenerator:
     <h2>1. Executive Summary</h2>
     <p>Comprehensive security posture audit combining port enumeration, web directory discovery, and vulnerability templates.</p>
 
-    <h2>2. Discovered Network Services (Nmap)</h2>
+    <h2>2. Perimeter Attack Surface (Nmap Port Scan)</h2>
     <table>
-      <thead><tr><th>Port / Protocol</th><th>State</th><th>Service</th><th>Version Fingerprint</th></tr></thead>
-      <tbody>{port_rows}</tbody>
+      <thead>
+        <tr><th>Port / Protocol</th><th>State</th><th>Discovered Service</th><th>Banner / Detection</th></tr>
+      </thead>
+      <tbody>
+        {port_rows}
+      </tbody>
     </table>
 
-    <h2>3. Vulnerability Findings (Nuclei)</h2>
+    <h2>3. Vulnerability Findings (Nuclei Engine)</h2>
     <table>
-      <thead><tr><th>Template / CVE ID</th><th>Severity</th><th>Matched Endpoint</th></tr></thead>
-      <tbody>{nuclei_rows}</tbody>
+      <thead>
+        <tr><th>Template / CVE ID</th><th>Severity</th><th>Matched URL / Endpoint</th></tr>
+      </thead>
+      <tbody>
+        {nuclei_rows}
+      </tbody>
     </table>
 
-    <h2>4. Web Directory Discovery (FFUF)</h2>
+    <h2>4. Discovered Routes (Web Fuzzer)</h2>
     <table>
-      <thead><tr><th>Status Code</th><th>Discovered URL</th><th>Payload Size</th></tr></thead>
-      <tbody>{fuzz_rows}</tbody>
+      <thead>
+        <tr><th>HTTP Status</th><th>Discovered Route</th><th>Payload Size</th></tr>
+      </thead>
+      <tbody>
+        {fuzz_rows}
+      </tbody>
     </table>
 
-    <h2>5. JARVIS AI Threat Analysis & Prioritized Remediation</h2>
+    <h2>5. JARVIS AI Threat Intelligence Directive</h2>
     <div class="ai-box">{escaped_ai}</div>
   </div>
 </body>

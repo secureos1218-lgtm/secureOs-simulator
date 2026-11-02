@@ -4,7 +4,7 @@ import chromadb
 def ingest_mitre_and_cves():
     print("[*] Initializing ChromaDB Persistent Vector Store for Threat Intel...")
     chroma_client = chromadb.PersistentClient(path="./cyber_kb")
-    collection = chroma_client.get_or_create_collection("cybersecurity_docs")
+    collection = chroma_client.get_or_create_collection("cybersecurity_library")
 
     # 1. High-Impact Enterprise MITRE ATT&CK Tactics & Techniques
     mitre_techniques = [
@@ -90,12 +90,12 @@ def ingest_mitre_and_cves():
 
     for item in mitre_techniques:
         docs.append(f"{item['doc']} Mitigation: {item['mitigation']}")
-        metas.append({"framework": "MITRE ATT&CK", "category": item["tactic"], "name": item["name"]})
+        metas.append({"framework": "MITRE ATT&CK", "category": item["tactic"], "title": item["name"]})
         ids.append(f"mitre_{item['id'].replace('.', '_')}")
 
     for item in cve_intelligence:
         docs.append(f"{item['doc']} Remediation: {item['mitigation']}")
-        metas.append({"framework": "CVE Knowledge", "category": "Vulnerability Intelligence", "cvss": item["cvss"]})
+        metas.append({"framework": "CVE Knowledge", "category": "Vulnerability Intelligence", "title": item["name"]})
         ids.append(f"cve_{item['id'].replace('-', '_')}")
 
     print(f"[*] Ingesting {len(ids)} MITRE ATT&CK & CVE intelligence records into ChromaDB...")
