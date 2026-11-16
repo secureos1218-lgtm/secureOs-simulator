@@ -166,7 +166,7 @@ def assistant_chat_api():
         return jsonify({"status": "ok"}), 200
 
     payload = request.get_json() or {}
-    query = payload.get("query", "").strip()
+    query = (payload.get("query") or payload.get("message") or payload.get("prompt") or "").strip()
     if not query:
         return jsonify({"status": "error", "message": "Query string required."}), 400
     try:

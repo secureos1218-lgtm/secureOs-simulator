@@ -19,20 +19,23 @@ class FfufEngine:
         if "FUZZ" not in target:
             target = target.rstrip("/") + "/FUZZ"
 
-        # Resolve wordlist: check specified path, then local wordlists/common.txt
+        # Resolve wordlist: support list, path string, or default wordlists/common.txt
         words = []
-        resolved_path = wordlist_path
-        if not resolved_path or not os.path.exists(resolved_path):
-            default_path = os.path.join(os.path.dirname(__file__), "..", "wordlists", "common.txt")
-            if os.path.exists(default_path):
-                resolved_path = default_path
+        if isinstance(wordlist_path, list):
+            words = [str(w).strip() for w in wordlist_path if str(w).strip()]
+        else:
+            resolved_path = wordlist_path if isinstance(wordlist_path, str) else None
+            if not resolved_path or not os.path.exists(resolved_path):
+                default_path = os.path.join(os.path.dirname(__file__), "..", "wordlists", "common.txt")
+                if os.path.exists(default_path):
+                    resolved_path = default_path
 
-        if resolved_path and os.path.exists(resolved_path):
-            try:
-                with open(resolved_path, "r", encoding="utf-8", errors="ignore") as f:
-                    words = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-            except Exception as e:
-                yield {"type": "TERMINAL_LINE", "text": f"[!] Error reading wordlist: {str(e)}\n"}
+            if resolved_path and os.path.exists(resolved_path):
+                try:
+                    with open(resolved_path, "r", encoding="utf-8", errors="ignore") as f:
+                        words = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+                except Exception as e:
+                    yield {"type": "TERMINAL_LINE", "text": f"[!] Error reading wordlist: {str(e)}\n"}
 
         if not words:
             words = [
