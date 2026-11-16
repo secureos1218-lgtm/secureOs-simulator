@@ -26,6 +26,7 @@ from core.assistant import SecurityAssistant
 from core.jarvis import JarvisEngine
 from core.reporter import ReportGenerator
 from core.rules import default_rule_engine
+from core.filters import translate_display_filter
 
 app = Flask(__name__)
 sock = Sock(app)
@@ -493,6 +494,7 @@ def websocket_wireshark_endpoint(ws):
             if action == "START_CAPTURE":
                 interface = payload.get("interface")
                 display_filter = payload.get("filter", "").strip()
+                bpf_filter = translate_display_filter(display_filter)
 
                 if stop_event.is_set():
                     stop_event.clear()
@@ -500,7 +502,7 @@ def websocket_wireshark_endpoint(ws):
 
                     sniffer_thread = threading.Thread(
                         target=WiresharkEngine.capture_packets_sync,
-                        args=(interface, 0, packet_queue, stop_event, display_filter if display_filter else None),
+                        args=(interface, 0, packet_queue, stop_event, bpf_filter if bpf_filter else None),
                         daemon=True
                     )
                     sniffer_thread.start()
@@ -550,9 +552,10 @@ def export_universal_vapt_report():
 
     content = ReportGenerator.generate_unified_vapt_report(
         target=target,
-        nmap_data=tool_data if tool == "Nmap" else {},
-        nuclei_data=tool_data if tool == "Nuclei" else [],
-        fuzz_data=tool_data if tool == "Fuzzer" else [],
+        nmap_data=tool_data if tool == "Nmap" else data.get("nmap_data", {}),
+        nuclei_data=tool_data if tool == "Nuclei" else data.get("nuclei_data", []),
+        fuzz_data=tool_data if tool == "Fuzzer" else data.get("fuzz_data", []),
+        nids_data=tool_data if tool in ["NIDS", "Wireshark"] else data.get("nids_data", []),
         ai_analysis=data.get("ai_analysis", f"SecurOS Unified Report for {tool}"),
         output_format=output_format
     )

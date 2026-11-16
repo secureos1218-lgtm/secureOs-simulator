@@ -16,9 +16,13 @@ DEFAULT_NIDS_RULES = [
     'alert tcp any any -> $HOME_NET 443 (msg:"SEC_SOC - Microsoft Exchange CVE-2024-21413 SSRF Token Attempt"; content:"/owa/auth.owa"; http_uri; classtype:web-application-attack; sid:1000201; rev:1;)',
     'alert tcp any any -> $HOME_NET 80 (msg:"SEC_SOC - Generic SQL Injection Union Select Attack"; content:"UNION"; nocase; content:"SELECT"; nocase; classtype:web-application-attack; sid:1000301; rev:1;)',
     'alert tcp any any -> $HOME_NET 80 (msg:"SEC_SOC - Web Directory Traversal /etc/passwd Extraction"; content:"../etc/passwd"; classtype:attempted-recon; sid:1000401; rev:1;)',
+    'alert tcp any any -> $HOME_NET 80 (msg:"SEC_SOC - Log4Shell JNDI Lookup Exploit Probe"; content:"${jndi:"; nocase; classtype:attempted-admin; sid:1000601; rev:1;)',
+    'alert tcp any any -> $HOME_NET 80 (msg:"SEC_SOC - Cross-Site Scripting (XSS) Tag Injection"; content:"<script>"; nocase; classtype:web-application-attack; sid:1001001; rev:1;)',
     
     # Active Directory Attack Vectors
-    'alert tcp any any -> $HOME_NET 88 (msg:"SEC_SOC - Active Directory AS-REP Roasting / Kerberoasting Probe"; content:"|05|"; classtype:credential-theft; sid:1000501; rev:1;)'
+    'alert tcp any any -> $HOME_NET 88 (msg:"SEC_SOC - Active Directory AS-REP Roasting / Kerberoasting Probe"; content:"|05|"; classtype:credential-theft; sid:1000501; rev:1;)',
+    'alert tcp any any -> $HOME_NET 389 (msg:"SEC_SOC - Unauthenticated LDAP RootDSE Anonymous Bind"; content:"RootDSE"; nocase; classtype:attempted-recon; sid:1000701; rev:1;)',
+    'alert tcp any any -> $HOME_NET 21 (msg:"SEC_SOC - Cleartext FTP User Authentication Attempt"; content:"USER"; classtype:credential-theft; sid:1000801; rev:1;)'
 ]
 
 

@@ -84,7 +84,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ─── Screen 1: SOC Dashboard ───────────────────────────────────────────────────
 
-function SOCDashboard() {
+function SOCDashboard({ onNavigate }: { onNavigate?: (tab: TabId) => void }) {
   const [history, setHistory] = useState<any[]>([]);
 
   useEffect(() => {
@@ -237,6 +237,88 @@ function SOCDashboard() {
           </div>
         </GlassCard>
       </div>
+
+      {/* Autonomous Security Operations Launchpad & Status */}
+      <GlassCard className="p-5 flex flex-col border-cyan-400/20">
+        <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Shield size={16} className="text-cyan-400" />
+            <SectionLabel>SOC Operational Launchpad & Sensor Array</SectionLabel>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded bg-green-500/10 text-green-300 border border-green-500/30">
+              <Radio size={11} className="text-green-400 animate-pulse" /> NIDS Sensor Online (10 Core SIDs)
+            </span>
+            <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-violet-500/10 text-violet-300 border border-violet-500/30">
+              <Bot size={11} className="inline mr-1" /> JARVIS v2.0 Ready
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { id: "nmap" as TabId, label: "Nmap Scanner", desc: "Network Attack Surface", icon: <Network size={16} className="text-orange-400" /> },
+            { id: "wireshark" as TabId, label: "Wireshark & NIDS", desc: "Live Frame Forensics", icon: <Activity size={16} className="text-cyan-400" /> },
+            { id: "nuclei" as TabId, label: "Nuclei DAST", desc: "CVE & Vuln Scanner", icon: <Target size={16} className="text-red-400" /> },
+            { id: "fuzzer" as TabId, label: "Web Fuzzer", desc: "Route Discovery", icon: <Zap size={16} className="text-amber-400" /> },
+            { id: "steg" as TabId, label: "Steganography", desc: "Payload Hiding & LSB", icon: <Code size={16} className="text-emerald-400" /> },
+            { id: "ai_desk" as TabId, label: "JARVIS & KB", desc: "AI Remediation & RAG", icon: <Bot size={16} className="text-violet-400" /> },
+          ].map((card) => (
+            <button
+              key={card.id}
+              onClick={() => onNavigate?.(card.id)}
+              className="p-3 rounded bg-black/40 border border-white/5 hover:border-cyan-400/40 hover:bg-cyan-500/5 text-left transition-all group flex flex-col justify-between"
+            >
+              <div>
+                <div className="mb-2 p-1.5 rounded bg-white/5 w-fit group-hover:scale-110 transition-transform">{card.icon}</div>
+                <div className="text-xs font-mono font-semibold text-slate-200 group-hover:text-cyan-300">{card.label}</div>
+                <div className="text-[10px] font-mono text-slate-500 mt-0.5">{card.desc}</div>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] font-mono text-cyan-400/80 mt-3 group-hover:translate-x-1 transition-transform">
+                Open <ChevronRight size={10} />
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Recent Firestore / Local Scan Audit Trail */}
+        {history.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-white/10">
+            <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-2">Cloud-Synced Scan History ({history.length})</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] font-mono">
+                <thead>
+                  <tr className="border-b border-white/10 text-left text-slate-500">
+                    <th className="pb-1.5">Target</th>
+                    <th className="pb-1.5">Profile</th>
+                    <th className="pb-1.5">Ports Found</th>
+                    <th className="pb-1.5">Timestamp</th>
+                    <th className="pb-1.5">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.slice(0, 5).map((h, i) => (
+                    <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
+                      <td className="py-2 text-cyan-400">{h.target}</td>
+                      <td className="py-2 text-slate-300">{h.profile}</td>
+                      <td className="py-2 text-amber-400">{Array.isArray(h.discovered_ports) ? h.discovered_ports.length : 0} ports</td>
+                      <td className="py-2 text-slate-500">{h.timestamp}</td>
+                      <td className="py-2">
+                        <button
+                          onClick={() => onNavigate?.("ai_desk")}
+                          className="text-[10px] px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                        >
+                          Analyze
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </GlassCard>
     </div>
   );
 }
@@ -531,8 +613,9 @@ interface NetworkAdapter {
 function WiresharkSniffer() {
   const [capturing, setCapturing] = useState(false);
   const [packetList, setPacketList] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
-  const [inspectorTab, setInspectorTab] = useState<"tree" | "jarvis">("tree");
+  const [inspectorTab, setInspectorTab] = useState<"tree" | "jarvis" | "alerts">("tree");
   const [bpf, setBpf] = useState("");
   const [interfaces, setInterfaces] = useState<NetworkAdapter[]>([]);
   const [selectedIface, setSelectedIface] = useState("");
@@ -580,6 +663,7 @@ function WiresharkSniffer() {
     } else {
       setCapturing(true);
       setPacketList([]);
+      setAlerts([]);
       setPacketCount(0);
       setSelected(null);
       setJarvisAnalysis("");
@@ -605,6 +689,11 @@ function WiresharkSniffer() {
           }
           if (raw.type === "CAPTURE_ERROR") {
             setCaptureNotice(`Notice: ${raw.message}`);
+            return;
+          }
+          if (raw.type === "NIDS_ALERT" && Array.isArray(raw.alerts)) {
+            setAlerts(prev => [...raw.alerts, ...prev].slice(0, 50));
+            setCaptureNotice(`🚨 NIDS Threat Detected: ${raw.alerts[0]?.msg || 'Intrusion Signature'}`);
             return;
           }
           if (raw.type === "CAPTURE_STOPPED" || raw.type === "CAPTURE_COMPLETE") {
@@ -651,6 +740,15 @@ function WiresharkSniffer() {
       sample_stream: packetList.slice(0, 15)
     };
     streamJarvis("Analyze these network packets for suspicious protocol traffic, brute force, port scans, or plaintext credential leaks:", contextData, (chunk) => {
+      setJarvisAnalysis(prev => prev + chunk);
+    }, () => setAnalyzing(false));
+  }
+
+  function remediateAlertWithJarvis(alertItem: any) {
+    setInspectorTab("jarvis");
+    setAnalyzing(true);
+    setJarvisAnalysis("");
+    streamJarvis(`Analyze this NIDS Intrusion Signature alert (SID: ${alertItem.sid}): ${alertItem.msg}. Provide tactical mitigation directives and firewall commands for attacker ${alertItem.src}.`, { alert: alertItem }, (chunk) => {
       setJarvisAnalysis(prev => prev + chunk);
     }, () => setAnalyzing(false));
   }
@@ -794,6 +892,17 @@ function WiresharkSniffer() {
               >
                 <Bot size={12} /> JARVIS Intelligence
               </button>
+              <button
+                onClick={() => setInspectorTab("alerts")}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono relative ${inspectorTab === "alerts" ? "bg-red-500/20 text-red-300 border border-red-500/40" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                <AlertTriangle size={12} className={alerts.length ? "text-red-400 animate-pulse" : ""} /> NIDS Alerts
+                {alerts.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[9px] font-bold">
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
             </div>
             {selected && (
               <span className="text-[10px] font-mono text-cyan-400">Frame #{selected.num}</span>
@@ -865,6 +974,39 @@ function WiresharkSniffer() {
                   Select a packet row from the left table to inspect protocol trees and hex payload.
                 </div>
               )
+            ) : inspectorTab === "alerts" ? (
+              <div className="space-y-3">
+                {alerts.length === 0 ? (
+                  <div className="py-20 text-center text-slate-500">
+                    No active NIDS intrusions detected. Suricata/Snort signatures monitoring live frames.
+                  </div>
+                ) : (
+                  alerts.map((a, i) => (
+                    <div key={i} className="p-3 rounded bg-red-950/20 border border-red-500/30 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 uppercase font-semibold">
+                          SID: {a.sid} · {a.severity || "Critical"}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-500">{a.timestamp}</span>
+                      </div>
+                      <div className="text-xs font-semibold text-slate-200">{a.msg}</div>
+                      <div className="text-[11px] font-mono text-cyan-300">
+                        Src: <span className="text-red-400">{a.src}</span> ➔ Dst: <span className="text-violet-300">{a.dst}</span>
+                      </div>
+                      {a.details && <div className="text-[10px] text-slate-400 italic">{a.details}</div>}
+                      <div className="pt-1 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">Class: {a.classtype}</span>
+                        <button
+                          onClick={() => remediateAlertWithJarvis(a)}
+                          className="text-[10px] font-mono px-2.5 py-1 rounded bg-violet-500/20 border border-violet-500/40 text-violet-300 hover:bg-violet-500/30 flex items-center gap-1"
+                        >
+                          <Zap size={10} /> Remediate with JARVIS
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             ) : (
               <div className="whitespace-pre-wrap leading-relaxed text-slate-300">
                 {jarvisAnalysis ? (
@@ -888,6 +1030,8 @@ function WiresharkSniffer() {
 function NucleiDASTScanner() {
   const [targetUrl, setTargetUrl] = useState("http://127.0.0.1:8000");
   const [severityFilter, setSeverityFilter] = useState("all");
+  const [activeTabSev, setActiveTabSev] = useState("ALL");
+  const [progress, setProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [vulns, setVulns] = useState<any[]>([]);
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
@@ -899,6 +1043,7 @@ function NucleiDASTScanner() {
 
   function handleRunNuclei() {
     setRunning(true);
+    setProgress(0);
     setVulns([]);
     setTerminalLines(["[*] Initializing Nuclei DAST Vulnerability Pipeline..."]);
     setJarvisExploitGuide("");
@@ -918,7 +1063,9 @@ function NucleiDASTScanner() {
     ws.onmessage = (event) => {
       try {
         const raw = JSON.parse(event.data);
-        if (raw.type === "TERMINAL_LINE") {
+        if (raw.type === "PROGRESS_UPDATE") {
+          setProgress(raw.percent || 0);
+        } else if (raw.type === "TERMINAL_LINE") {
           setTerminalLines(prev => [...prev, raw.text]);
         } else if (raw.type === "FINDING" || raw.finding) {
           const item = raw.data || raw.finding || raw;
@@ -932,6 +1079,7 @@ function NucleiDASTScanner() {
           setVulns(prev => [...prev, normalized]);
         } else if (raw.type === "NUCLEI_COMPLETE") {
           setRunning(false);
+          setProgress(100);
           setTerminalLines(prev => [...prev, "[✔] Nuclei Vulnerability Audit Complete."]);
           ws.close();
         }
@@ -997,6 +1145,21 @@ function NucleiDASTScanner() {
         >
           <Download size={13} /> Export HTML
         </button>
+
+        {running && (
+          <div className="w-full space-y-1 mt-2">
+            <div className="flex justify-between text-[10px] font-mono text-cyan-400">
+              <span>Scanning Vulnerability Pipeline</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-cyan-400 h-1.5 transition-all duration-300 rounded-full"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
       </GlassCard>
 
       {showConsole && (
@@ -1011,6 +1174,28 @@ function NucleiDASTScanner() {
             </div>
           ))}
         </GlassCard>
+      )}
+
+      {/* Severity Filter Pills */}
+      {vulns.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto px-1">
+          {["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"].map((sev) => {
+            const count = sev === "ALL" ? vulns.length : vulns.filter(v => v.severity.toUpperCase() === sev).length;
+            return (
+              <button
+                key={sev}
+                onClick={() => setActiveTabSev(sev)}
+                className={`text-[10px] font-mono px-3 py-1 rounded transition-all ${
+                  activeTabSev === sev
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/40"
+                    : "bg-black/30 border border-white/5 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {sev} ({count})
+              </button>
+            );
+          })}
+        </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-[420px]">
@@ -1042,7 +1227,9 @@ function NucleiDASTScanner() {
                     </td>
                   </tr>
                 ) : (
-                  vulns.map((v, i) => (
+                  vulns
+                    .filter(v => activeTabSev === "ALL" || v.severity.toUpperCase() === activeTabSev)
+                    .map((v, i) => (
                     <tr key={i} className={`border-b border-white/5 ${selected === v ? "bg-violet-500/15" : "hover:bg-white/[0.03]"}`}>
                       <td className="py-2.5 px-3 text-amber-400 font-bold">
                         <div>{v.template}</div>
@@ -1096,6 +1283,7 @@ function NucleiDASTScanner() {
 function WebFuzzer() {
   const [targetUrl, setTargetUrl] = useState("http://127.0.0.1:8000/FUZZ");
   const [fuzzing, setFuzzing] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [routes, setRoutes] = useState<any[]>([]);
   const [fuzzAnalysis, setFuzzAnalysis] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
@@ -1103,6 +1291,7 @@ function WebFuzzer() {
 
   function handleStartFuzz() {
     setFuzzing(true);
+    setProgress(0);
     setRoutes([]);
     setFuzzAnalysis("");
     const ws = new WebSocket(`${WS_BASE}/ws/fuzzer`);
@@ -1118,16 +1307,20 @@ function WebFuzzer() {
     ws.onmessage = (event) => {
       try {
         const raw = JSON.parse(event.data);
-        if (raw.type === "ROUTE_DISCOVERED" || raw.route) {
+        if (raw.type === "PROGRESS_UPDATE") {
+          setProgress(raw.percent || 0);
+        } else if (raw.type === "ROUTE_DISCOVERED" || raw.route) {
           const item = raw.data || raw.route || raw;
           const normalized = {
             url: item.url || item.path || targetUrl.replace("FUZZ", String(item.input || "")),
             status: Number(item.status || item.status_code || item.code || 200),
-            length: Number(item.length || item.size || item.len || 0)
+            length: Number(item.length || item.size || item.len || 0),
+            latency: item.latency || 0
           };
           setRoutes(prev => [...prev, normalized]);
         } else if (raw.type === "FUZZ_COMPLETE") {
           setFuzzing(false);
+          setProgress(100);
           ws.close();
         }
       } catch (e) {}
@@ -1175,6 +1368,21 @@ function WebFuzzer() {
         >
           <Download size={13} /> Export
         </button>
+
+        {fuzzing && (
+          <div className="w-full space-y-1 mt-2">
+            <div className="flex justify-between text-[10px] font-mono text-cyan-400">
+              <span>Fuzzing Active Endpoints</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-cyan-400 h-1.5 transition-all duration-300 rounded-full"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
       </GlassCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-[400px]">
@@ -1183,7 +1391,7 @@ function WebFuzzer() {
             <table className="w-full text-[11px] font-mono">
               <thead className="sticky top-0 bg-[#0a1220] border-b border-white/10">
                 <tr>
-                  {["Discovered URL", "Status", "Size"].map(h => (
+                  {["Discovered URL", "Status", "Payload Size", "Latency"].map(h => (
                     <th key={h} className="text-left text-slate-400 py-2.5 px-4 font-normal">{h}</th>
                   ))}
                 </tr>
@@ -1191,7 +1399,7 @@ function WebFuzzer() {
               <tbody>
                 {routes.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="py-12 text-center text-slate-500">
+                    <td colSpan={4} className="py-12 text-center text-slate-500">
                       {fuzzing ? "Fuzzing endpoints..." : "No routes discovered yet. Click Start Fuzzing to begin discovery."}
                     </td>
                   </tr>
@@ -1201,6 +1409,7 @@ function WebFuzzer() {
                       <td className="py-2 px-4 text-cyan-300">{r.url}</td>
                       <td className="py-2 px-4"><StatusBadge code={r.status} /></td>
                       <td className="py-2 px-4 text-slate-400">{r.length} B</td>
+                      <td className="py-2 px-4 text-slate-500">{r.latency ? `${r.latency}ms` : "<10ms"}</td>
                     </tr>
                   ))
                 )}
@@ -1683,7 +1892,7 @@ export default function App() {
       </nav>
 
       <main className="flex-1 w-full max-w-[1680px] mx-auto p-4 md:p-6">
-        {active === "dashboard" && <SOCDashboard />}
+        {active === "dashboard" && <SOCDashboard onNavigate={(tab) => setActive(tab)} />}
         {active === "nmap" && <NmapScanner />}
         {active === "wireshark" && <WiresharkSniffer />}
         {active === "nuclei" && <NucleiDASTScanner />}

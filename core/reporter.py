@@ -8,12 +8,13 @@ class ReportGenerator:
         nmap_data: dict = None,
         nuclei_data: list = None,
         fuzz_data: list = None,
+        nids_data: list = None,
         ai_analysis: str = "",
         output_format: str = "html"
     ) -> str:
         """
         Generates a consolidated VAPT report aggregating Nmap, Nuclei, 
-        FFUF, and JARVIS AI Threat Intelligence.
+        FFUF, NIDS Intrusion Signatures, and JARVIS AI Threat Intelligence.
         """
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -26,27 +27,28 @@ class ReportGenerator:
 
         nuclei_findings = nuclei_data if isinstance(nuclei_data, list) else []
         fuzz_findings = fuzz_data if isinstance(fuzz_data, list) else []
+        nids_alerts = nids_data if isinstance(nids_data, list) else []
 
         if output_format == "markdown":
             return ReportGenerator._build_unified_markdown(
-                target, timestamp, nmap_ports, nuclei_findings, fuzz_findings, ai_analysis
+                target, timestamp, nmap_ports, nuclei_findings, fuzz_findings, nids_alerts, ai_analysis
             )
         else:
             return ReportGenerator._build_unified_html(
-                target, timestamp, nmap_ports, nuclei_findings, fuzz_findings, ai_analysis
+                target, timestamp, nmap_ports, nuclei_findings, fuzz_findings, nids_alerts, ai_analysis
             )
 
     @staticmethod
     def generate_vapt_markdown(target: str, scan_data: dict, ai_analysis: str = "") -> str:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
         ports = (scan_data or {}).get("ports", []) if isinstance(scan_data, dict) else []
-        return ReportGenerator._build_unified_markdown(target, timestamp, ports, [], [], ai_analysis)
+        return ReportGenerator._build_unified_markdown(target, timestamp, ports, [], [], [], ai_analysis)
 
     @staticmethod
     def generate_vapt_html(target: str, scan_data: dict, ai_analysis: str = "") -> str:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
         ports = (scan_data or {}).get("ports", []) if isinstance(scan_data, dict) else []
-        return ReportGenerator._build_unified_html(target, timestamp, ports, [], [], ai_analysis)
+        return ReportGenerator._build_unified_html(target, timestamp, ports, [], [], [], ai_analysis)
 
     @staticmethod
     def _format_port_display(p: dict) -> str:
@@ -57,7 +59,7 @@ class ReportGenerator:
         return f"{port_raw}/{proto}"
 
     @staticmethod
-    def _build_unified_markdown(target, timestamp, ports, nuclei, fuzz, ai_analysis):
+    def _build_unified_markdown(target, timestamp, ports, nuclei, fuzz, nids, ai_analysis):
         lines = [
             f"# SecurOS // Comprehensive VAPT Engagement Report",
             f"**Target Host / Domain:** `{target}`  ",
@@ -70,7 +72,7 @@ class ReportGenerator:
             "## 1. Executive Summary",
             f"An automated Vulnerability Assessment and Penetration Testing (VAPT) evaluation was conducted against `{target}`. "
             f"The scope included network service mapping ({len(ports)} services), automated vulnerability templates ({len(nuclei)} findings), "
-            f"and web endpoint discovery ({len(fuzz)} routes).",
+            f"web endpoint discovery ({len(fuzz)} routes), and network intrusion detection ({len(nids)} alerts).",
             "",
             "---",
             "",
@@ -126,21 +128,37 @@ class ReportGenerator:
             "",
             "---",
             "",
-            "## 5. JARVIS Threat Intelligence & Remediation Directives",
+            "## 5. Network Intrusion Detection & Telemetry (NIDS)",
+            "",
+            "| SID | Severity | Signature Description | Source ➔ Destination | Mitigation Directive |",
+            "| :--- | :--- | :--- | :--- | :--- |"
+        ])
+
+        if not nids:
+            lines.append("| *None* | *Clean* | *No active intrusion alerts flagged* | *N/A* | *Baseline normal* |")
+        else:
+            for a in nids:
+                lines.append(f"| `{a.get('sid', 'N/A')}` | **{(a.get('severity') or 'Medium').upper()}** | {a.get('msg', 'Alert')} | `{a.get('src', '?')}` ➔ `{a.get('dst', '?')}` | {a.get('mitigation', 'Isolate host / Block via firewall')} |")
+
+        lines.extend([
+            "",
+            "---",
+            "",
+            "## 6. JARVIS Threat Intelligence & Remediation Directives",
             "",
             ai_analysis if ai_analysis else "Standard perimeter hardening recommended: Restrict unused ports, apply critical patches, and enforce WAF inspection.",
             "",
             "---",
             "",
-            "## 6. Engagement Sign-Off",
-            "- **Testing Standard:** PTES, OWASP Top 10, MITRE ATT&CK Framework",
+            "## 7. Engagement Sign-Off",
+            "- **Testing Standard:** PTES, OWASP Top 10, MITRE ATT&CK Framework, NIST SP 800-115",
             f"- **Report Generated:** {timestamp}"
         ])
 
         return "\n".join(lines)
 
     @staticmethod
-    def _build_unified_html(target, timestamp, ports, nuclei, fuzz, ai_analysis):
+    def _build_unified_html(target, timestamp, ports, nuclei, fuzz, nids, ai_analysis):
         port_rows = ""
         for p in ports:
             port_disp = ReportGenerator._format_port_display(p)
@@ -165,6 +183,14 @@ class ReportGenerator:
             fuzz_rows += f"<tr><td><code>{html.escape(str(f.get('status', '200')))}</code></td><td><code>{html.escape(str(f.get('url', f.get('path', ''))))}</code></td><td>{html.escape(str(f.get('length', 'N/A')))} B</td></tr>"
         if not fuzz_rows:
             fuzz_rows = "<tr><td colspan='3' style='text-align:center;'>No hidden endpoints discovered.</td></tr>"
+
+        nids_rows = ""
+        for a in nids:
+            sev = (a.get('severity') or 'medium').lower()
+            badge_class = 'critical' if sev in ['critical', 'high'] else 'medium'
+            nids_rows += f"<tr><td><code>{html.escape(str(a.get('sid', 'N/A')))}</code></td><td><span class='badge {badge_class}'>{html.escape(sev.upper())}</span></td><td>{html.escape(str(a.get('msg', 'Alert')))}</td><td><code>{html.escape(str(a.get('src', '?')))}</code> ➔ <code>{html.escape(str(a.get('dst', '?')))}</code></td><td>{html.escape(str(a.get('mitigation', 'Apply firewall rule')))}</td></tr>"
+        if not nids_rows:
+            nids_rows = "<tr><td colspan='5' style='text-align:center;'>No active network intrusion alerts triggered.</td></tr>"
 
         escaped_ai = html.escape(ai_analysis) if ai_analysis else "Perimeter evaluation complete. Isolate exposed services and patch CVEs."
 
@@ -198,42 +224,58 @@ class ReportGenerator:
       <h1>🛡️ SecurOS // Unified VAPT Engagement Audit Report</h1>
       <div class="meta">Target: <strong>{html.escape(target)}</strong> | Generated: {timestamp} | Classification: Confidential (TLP:AMBER)</div>
     </div>
-    
-    <h2>1. Executive Summary</h2>
-    <p>Comprehensive security posture audit combining port enumeration, web directory discovery, and vulnerability templates.</p>
 
-    <h2>2. Perimeter Attack Surface (Nmap Port Scan)</h2>
+    <h2>1. Executive Summary</h2>
+    <p>Automated security audit was conducted targeting <code>{html.escape(target)}</code> across active listener ports, vulnerability templates, directory fuzzing routes, and real-time NIDS signature inspection.</p>
+
+    <h2>2. Perimeter Attack Surface (Nmap)</h2>
     <table>
       <thead>
-        <tr><th>Port / Protocol</th><th>State</th><th>Discovered Service</th><th>Banner / Detection</th></tr>
+        <tr><th>Port / Protocol</th><th>Status</th><th>Service</th><th>Version Banner</th></tr>
       </thead>
       <tbody>
         {port_rows}
       </tbody>
     </table>
 
-    <h2>3. Vulnerability Findings (Nuclei Engine)</h2>
+    <h2>3. Vulnerability Template Findings (Nuclei)</h2>
     <table>
       <thead>
-        <tr><th>Template / CVE ID</th><th>Severity</th><th>Matched URL / Endpoint</th></tr>
+        <tr><th>Template / CVE ID</th><th>Severity</th><th>Matched URL Endpoint</th></tr>
       </thead>
       <tbody>
         {nuclei_rows}
       </tbody>
     </table>
 
-    <h2>4. Discovered Routes (Web Fuzzer)</h2>
+    <h2>4. Exposed Web Routes & Endpoints (FFUF)</h2>
     <table>
       <thead>
-        <tr><th>HTTP Status</th><th>Discovered Route</th><th>Payload Size</th></tr>
+        <tr><th>HTTP Status</th><th>Discovered Path</th><th>Payload Size</th></tr>
       </thead>
       <tbody>
         {fuzz_rows}
       </tbody>
     </table>
 
-    <h2>5. JARVIS AI Threat Intelligence Directive</h2>
+    <h2>5. Network Intrusion Detection (NIDS Alerts)</h2>
+    <table>
+      <thead>
+        <tr><th>SID</th><th>Severity</th><th>Signature Message</th><th>Source ➔ Destination</th><th>Mitigation</th></tr>
+      </thead>
+      <tbody>
+        {nids_rows}
+      </tbody>
+    </table>
+
+    <h2>6. Lead AI Threat Intelligence & Remediation Directives</h2>
     <div class="ai-box">{escaped_ai}</div>
+
+    <h2>7. Engagement Standards Sign-Off</h2>
+    <p style="font-size: 12px; color: #64748b;">
+      Compliance Alignment: <strong>PTES Standard</strong> | <strong>OWASP Top 10</strong> | <strong>MITRE ATT&CK</strong> | <strong>NIST SP 800-115</strong>
+    </p>
   </div>
 </body>
-</html>"""
+</html>
+"""

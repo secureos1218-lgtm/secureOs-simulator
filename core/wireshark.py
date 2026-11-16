@@ -295,12 +295,12 @@ class WiresharkEngine:
             print(f"[!] Scapy Sniffer Notice: {err_msg}")
             packet_queue.put({"type": "CAPTURE_ERROR", "message": f"Driver notice: {err_msg}. Activating SecurOS Telemetry Generator..."}, block=False)
             # Run simulation fallback so the user can test the simulator
-            cls._run_simulation_stream(packet_queue, stop_event)
+            cls._run_simulation_stream(packet_queue, stop_event, bpf_filter)
         finally:
             packet_queue.put({"type": "CAPTURE_COMPLETE"}, block=False)
 
     @classmethod
-    def _run_simulation_stream(cls, packet_queue, stop_event):
+    def _run_simulation_stream(cls, packet_queue, stop_event, bpf_filter=None):
         """Generates realistic telemetry packets for testing and simulator demonstrations."""
         indexer = 0
         protocols = [
@@ -313,6 +313,20 @@ class WiresharkEngine:
             ("ICMP", 0, 0, "Echo (ping) request id=0x0001 seq=1/256"),
             ("ARP", 0, 0, "Who has 192.168.1.1? Tell 192.168.1.105")
         ]
+
+        # Filter candidate pool if filter expression matches known protocol or port
+        if bpf_filter:
+            filter_lower = str(bpf_filter).lower()
+            filtered = [
+                p for p in protocols
+                if p[0].lower() in filter_lower
+                or str(p[1]) in filter_lower
+                or ("http" in filter_lower and p[1] in [80, 8080])
+                or ("dns" in filter_lower and p[1] == 53)
+                or ("tls" in filter_lower and p[1] == 443)
+            ]
+            if filtered:
+                protocols = filtered
 
         while not stop_event.is_set():
             indexer += 1

@@ -156,6 +156,38 @@ class NucleiEngine:
                 "match": "__schema"
             },
             {
+                "id": "prometheus-metrics",
+                "name": "Exposed Prometheus Metrics Telemetry",
+                "path": "/metrics",
+                "severity": "medium",
+                "description": "System metrics, process counts, and internal latency telemetry exposed without authentication.",
+                "match": ["go_goroutines", "process_cpu_seconds", "jvm_memory_bytes"]
+            },
+            {
+                "id": "phpmyadmin-portal",
+                "name": "Exposed phpMyAdmin Administration Portal",
+                "path": "/phpmyadmin",
+                "severity": "high",
+                "description": "Web database administration interface exposed to public access.",
+                "match": ["phpMyAdmin", "pma_username"]
+            },
+            {
+                "id": "adminer-portal",
+                "name": "Exposed Adminer Database Manager",
+                "path": "/adminer.php",
+                "severity": "high",
+                "description": "Single-file database manager exposed, allowing remote DB connection attempts.",
+                "match": ["Adminer", "Login - Adminer"]
+            },
+            {
+                "id": "ds-store-leak",
+                "name": "Exposed Apple macOS .DS_Store Metadata",
+                "path": "/.DS_Store",
+                "severity": "low",
+                "description": "Directory listing metadata exposed via macOS Finder .DS_Store file.",
+                "match": ["Bud1", "Mac OS"]
+            },
+            {
                 "id": "robots-txt-disclosure",
                 "name": "Sensitive Paths in robots.txt",
                 "path": "/robots.txt",
@@ -243,6 +275,36 @@ class NucleiEngine:
                             }
                             yield {"type": "TERMINAL_LINE", "text": f"[Nuclei ℹ️ INFO] {target} -> Server Banner Disclosure: {server_banner}\n"}
 
+                        # Missing Strict-Transport-Security (HSTS)
+                        if cls._matches_severity("low", severity) and target.startswith("https://") and "Strict-Transport-Security" not in headers:
+                            finding_count += 1
+                            yield {
+                                "type": "NUCLEI_FINDING",
+                                "data": {
+                                    "template_id": "missing-hsts-header",
+                                    "name": "Missing Strict-Transport-Security (HSTS)",
+                                    "severity": "low",
+                                    "matched_at": target,
+                                    "description": "Target response lacks HSTS header, allowing SSL stripping and man-in-the-middle downgrades to plaintext HTTP."
+                                }
+                            }
+                            yield {"type": "TERMINAL_LINE", "text": f"[Nuclei ⚠️ LOW] {target} -> Missing HSTS Header\n"}
+
+                        # Missing Content-Security-Policy (CSP)
+                        if cls._matches_severity("low", severity) and "Content-Security-Policy" not in headers:
+                            finding_count += 1
+                            yield {
+                                "type": "NUCLEI_FINDING",
+                                "data": {
+                                    "template_id": "missing-csp-header",
+                                    "name": "Missing Content-Security-Policy (CSP)",
+                                    "severity": "low",
+                                    "matched_at": target,
+                                    "description": "Absence of Content-Security-Policy header increases susceptibility to Cross-Site Scripting (XSS) and data injection."
+                                }
+                            }
+                            yield {"type": "TERMINAL_LINE", "text": f"[Nuclei ⚠️ LOW] {target} -> Missing Content-Security-Policy (CSP)\n"}
+
                 except Exception as e:
                     yield {"type": "TERMINAL_LINE", "text": f"[!] Base endpoint probe note: {str(e)}\n"}
 
@@ -281,6 +343,10 @@ class NucleiEngine:
 
                 for task in asyncio.as_completed(tasks):
                     completed_tasks += 1
+                    if completed_tasks % 3 == 0 or completed_tasks == total_tasks:
+                        pct = round((completed_tasks / total_tasks) * 100, 1)
+                        yield {"type": "PROGRESS_UPDATE", "percent": pct, "label": f"Scanning Vulnerabilities ({int(pct)}%)"}
+
                     finding = await task
                     if finding:
                         finding_count += 1

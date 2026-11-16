@@ -223,6 +223,47 @@ class JarvisEngine:
             ]
             return "\n".join(report)
 
+        # ── Case E: NIDS Intrusion Signature Alert ────────────────────
+        if "alert" in telemetry or "alerts" in telemetry or "nids" in telemetry:
+            alert = telemetry.get("alert") or (telemetry.get("alerts", [{}])[0] if isinstance(telemetry.get("alerts"), list) and telemetry.get("alerts") else {}) or telemetry.get("nids", {})
+            msg = alert.get("msg", "Intrusion Detection Signature Triggered")
+            sid = alert.get("sid", 1000101)
+            severity = (alert.get("severity", "High")).upper()
+            src = alert.get("src", "Attacker Host")
+            dst = alert.get("dst", "Target Host")
+            classtype = alert.get("classtype", "attempted-admin")
+
+            cvss = "9.8 (Critical)" if severity == "CRITICAL" else ("8.2 (High)" if severity == "HIGH" else "6.5 (Medium)")
+
+            report = [
+                f"### 🚨 JARVIS NIDS Threat Remediation: SID {sid}\n",
+                "### 1. Executive Threat Overview & Severity Rating",
+                f"- **Signature Description:** `{msg}`",
+                f"- **Signature ID (SID):** `{sid}`",
+                f"- **Severity Classification:** `{severity}`",
+                f"- **Adversary Source:** `{src}` ➔ **Target Destination:** `{dst}`",
+                f"- **Calculated CVSS Score:** `{cvss}`",
+                f"- **Classtype:** `{classtype}`\n",
+                "### 2. Attack Surface & MITRE ATT&CK Mapping",
+                "- **T1190 - Exploit Public-Facing Application**: Active remote exploitation attempt over wire.",
+                "- **T1046 - Network Service Discovery**: Rapid port sweeping or listener reconnaissance.",
+                "- **T1110 - Brute Force / Credential Access**: Active protocol probing or AS-REP roasting.\n",
+                "### 3. Technical Vulnerability Mechanics & Exploit Vectors",
+                f"- Signature `{msg}` was matched on live telemetry stream. Threat traffic contains payload indicators attempting unauthenticated privilege escalation or protocol corruption on `{dst}`.",
+                "- Left unmitigated, adversary can achieve initial access, execute commands, or laterally traverse the corporate subnet.\n",
+                "### 4. Internal Remediation Directives (Inside Infrastructure)",
+                f"1. **Immediate Host Quarantine**: Temporarily isolate source `{src}` from the local VLAN to prevent lateral infection.",
+                "2. **Patch & Service Hardening**: Apply vendor hotfixes on destination services and enforce SMB signing / NLA.",
+                "3. **SIEM Event Correlation**: Cross-reference Sysmon Event ID 1 (Process Create) and Event ID 3 (Network Connect) on destination host.\n",
+                "### 5. External Remediation Directives (Perimeter & Edge)",
+                f"1. **Border Gateway Blacklist**: Drop all stateful ingress and egress traffic involving `{src}`.",
+                f"2. **IPS Drop Enforcement**: Transition Snort/Suricata sensor from `alert` to inline `drop` mode for SID {sid}.\n",
+                "### 6. Actionable CLI Mitigation Commands",
+                f"```powershell\n# [PowerShell - Run as Administrator to Quarantine Source IP]\nNew-NetFirewallRule -DisplayName \"SecurOS-NIDS-Block-{src}\" -Direction Inbound -RemoteAddress \"{src}\" -Action Block\n```",
+                f"```bash\n# [Linux Perimeter / iptables - Drop Attacker Packets]\niptables -I INPUT -s {src} -j DROP\niptables -I FORWARD -s {src} -j DROP\n```"
+            ]
+            return "\n".join(report)
+
         # ── Case E: Generic Threat Remediation Directives ─────────────
         return (
             f"### 🛡️ JARVIS Tactical Remediation Plan: {prompt}\n\n"
